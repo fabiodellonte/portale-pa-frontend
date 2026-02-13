@@ -40,6 +40,8 @@ function primeAccess() {
     if (url === '/v1/segnalazioni/priorities') return Promise.resolve({ data: { items: [{ id: 's1', titolo: 'Buca via Roma', categoria: 'Viabilità', trend: '+12%', supporti: 3 }] } });
     if (url === '/v1/segnalazioni/s1') return Promise.resolve({ data: { id: 's1', codice: 'SGN-1', titolo: 'Buca via Roma', descrizione: 'Dettaglio reale da DB', timeline: [] } });
     if (url === '/v1/admin/demo-mode') return Promise.resolve({ data: { state: demoModeState, output: `status ${demoModeState}` } });
+    if (url === '/v1/segnalazioni/assisted-tags') return Promise.resolve({ data: { items: [{ id: 't1', slug: 'viabilita', label: 'Viabilità' }, { id: 't2', slug: 'illuminazione', label: 'Illuminazione' }] } });
+    if (url === '/v1/segnalazioni/assisted-addresses') return Promise.resolve({ data: { items: [{ id: 'a1', address: 'Via Roma 24', reference_code: 'VRM24', lat: 41.9, lng: 12.5 }] } });
     return Promise.resolve({ data: {} });
   });
 }
@@ -56,6 +58,12 @@ describe('Portale PA mobile dettaglio', () => {
       }
       if (url === '/v1/segnalazioni/s1/vote-toggle') {
         return Promise.resolve({ data: { votes_count: 4 } });
+      }
+      if (url === '/v1/segnalazioni/assisted-addresses/validate') {
+        return Promise.resolve({ data: { validated: true, source: 'tenant_address_catalog', catalog_id: 'a1', normalized_address: 'Via Roma 24', reference_code: 'VRM24', lat: 41.9, lng: 12.5, confidence: 1 } });
+      }
+      if (url === '/v1/segnalazioni/wizard') {
+        return Promise.resolve({ data: { id: 's9', codice: 'SGN-9', titolo: 'Nuova segnalazione' } });
       }
       return Promise.resolve({ data: {} });
     });
@@ -142,6 +150,37 @@ describe('Portale PA mobile dettaglio', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Dettaglio' }));
     expect(await screen.findByText(/Dettaglio reale da DB/)).toBeInTheDocument();
+  });
+
+  it('uses assisted tags + address validation and blocks submit until verified', async () => {
+    render(<App />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Crea segnalazione' }));
+
+    await userEvent.type(screen.getByLabelText('Titolo segnalazione'), 'Buche via Roma');
+    await userEvent.type(screen.getByLabelText('Descrizione segnalazione'), 'Descrizione abbastanza lunga per completare il wizard.');
+    await userEvent.click(screen.getByRole('button', { name: 'Prosegui' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Continua' }));
+
+    await userEvent.type(screen.getByLabelText('Indirizzo segnalazione'), 'Via Roma 24');
+    await userEvent.click(await screen.findByRole('button', { name: /Via Roma 24 • VRM24/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Viabilità' }));
+
+    const submitBefore = screen.getByRole('button', { name: 'Invia segnalazione' });
+    expect(submitBefore).toBeDisabled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Valida indirizzo' }));
+    expect(await screen.findByText('Indirizzo verificato')).toBeInTheDocument();
+
+    const submitAfter = screen.getByRole('button', { name: 'Invia segnalazione' });
+    expect(submitAfter).toBeEnabled();
+    await userEvent.click(submitAfter);
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/v1/segnalazioni/wizard', expect.objectContaining({
+      tag_slugs: ['viabilita'],
+      address_validation: expect.objectContaining({ validated: true, reference_code: 'VRM24' })
+    }), expect.anything()));
   });
 
   it('keeps deterministic duplicate-search normalization contract', () => {

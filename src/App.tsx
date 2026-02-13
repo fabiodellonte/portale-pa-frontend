@@ -32,6 +32,18 @@ type Segnalazione = {
 
 type PriorityItem = { id: string; titolo: string; categoria: string; trend: string; supporti: number };
 type DemoModeState = 'on' | 'off' | 'unknown';
+type AssistedTag = { id: string; slug: string; label: string };
+type AssistedAddress = { id: string; address: string; reference_code: string; lat: number; lng: number };
+type AddressValidation = {
+  validated: boolean;
+  source: 'tenant_address_catalog';
+  catalog_id: string;
+  normalized_address: string;
+  reference_code: string;
+  lat: number;
+  lng: number;
+  confidence?: number;
+};
 
 type Screen = 'login' | 'home' | 'wizard' | 'priorita' | 'dettaglio';
 type WizardStep = 1 | 2 | 3;
@@ -78,7 +90,12 @@ export default function App() {
   const [wizardTitle, setWizardTitle] = useState('');
   const [wizardDescription, setWizardDescription] = useState('');
   const [wizardAddress, setWizardAddress] = useState('');
-  const [wizardTags, setWizardTags] = useState('');
+  const [wizardAddressCatalogId, setWizardAddressCatalogId] = useState('');
+  const [wizardAddressSuggestions, setWizardAddressSuggestions] = useState<AssistedAddress[]>([]);
+  const [wizardAddressValidation, setWizardAddressValidation] = useState<AddressValidation | null>(null);
+  const [wizardTagOptions, setWizardTagOptions] = useState<AssistedTag[]>([]);
+  const [wizardTagFilter, setWizardTagFilter] = useState('');
+  const [wizardSelectedTagSlugs, setWizardSelectedTagSlugs] = useState<string[]>([]);
   const [wizardDuplicateOf, setWizardDuplicateOf] = useState('');
   const [wizardError, setWizardError] = useState('');
   const [wizardLoading, setWizardLoading] = useState(false);
@@ -198,7 +215,7 @@ export default function App() {
   }, [headers, isAdmin]);
 
   const openWizard = () => {
-    setWizardStep(1); setWizardError(''); setWizardTitle(''); setWizardDescription(''); setWizardAddress(''); setWizardTags(''); setWizardDuplicateOf(''); setDuplicateCandidates([]); setDuplicateMode(null); setActiveScreen('wizard');
+    setWizardStep(1); setWizardError(''); setWizardTitle(''); setWizardDescription(''); setWizardAddress(''); setWizardAddressCatalogId(''); setWizardAddressSuggestions([]); setWizardAddressValidation(null); setWizardTagFilter(''); setWizardSelectedTagSlugs([]); setWizardDuplicateOf(''); setDuplicateCandidates([]); setDuplicateMode(null); setActiveScreen('wizard');
   };
 
   const onDevProfileChange = (profileKey: DevProfileKey) => {
@@ -222,6 +239,37 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (activeScreen !== 'wizard') return;
+    void (async () => {
+      try {
+        const tagsRes = await api.get('/v1/segnalazioni/assisted-tags', { headers, params: { tenant_id: tenantId, q: wizardTagFilter || undefined, limit: 30 } });
+        setWizardTagOptions((tagsRes.data?.items ?? []) as AssistedTag[]);
+      } catch {
+        setWizardTagOptions([]);
+      }
+    })();
+  }, [activeScreen, headers, tenantId, wizardTagFilter]);
+
+  useEffect(() => {
+    if (activeScreen !== 'wizard' || wizardStep !== 3 || wizardAddress.trim().length < 2) {
+      if (wizardAddress.trim().length < 2) setWizardAddressSuggestions([]);
+      return;
+    }
+
+    void (async () => {
+      try {
+        const addressRes = await api.get('/v1/segnalazioni/assisted-addresses', {
+          headers,
+          params: { tenant_id: tenantId, q: wizardAddress.trim(), limit: 5 }
+        });
+        setWizardAddressSuggestions((addressRes.data?.items ?? []) as AssistedAddress[]);
+      } catch {
+        setWizardAddressSuggestions([]);
+      }
+    })();
+  }, [activeScreen, headers, tenantId, wizardAddress, wizardStep]);
+
   const wizardStep1 = async (e: FormEvent) => {
     e.preventDefault();
     if (wizardTitle.trim().length < 3) return setWizardError('Inserisci un titolo di almeno 3 caratteri.');
@@ -229,9 +277,34 @@ export default function App() {
     setWizardError(''); setWizardStep(2); await checkDuplicates();
   };
 
+  const toggleWizardTag = (slug: string) => {
+    setWizardSelectedTagSlugs((current) => current.includes(slug) ? current.filter((entry) => entry !== slug) : [...current, slug].slice(0, 10));
+  };
+
+  const validateWizardAddress = async () => {
+    if (!wizardAddressCatalogId || wizardAddress.trim().length < 3) {
+      setWizardError('Seleziona un indirizzo suggerito prima della validazione.');
+      return;
+    }
+
+    try {
+      const res = await api.post('/v1/segnalazioni/assisted-addresses/validate', {
+        tenant_id: tenantId,
+        catalog_id: wizardAddressCatalogId,
+        address: wizardAddress.trim()
+      }, { headers });
+      setWizardAddressValidation(res.data as AddressValidation);
+      setWizardError('');
+    } catch {
+      setWizardAddressValidation(null);
+      setWizardError('Validazione indirizzo non riuscita. Verifica il suggerimento selezionato.');
+    }
+  };
+
   const submitWizard = async (e: FormEvent) => {
     e.preventDefault();
     if (wizardAddress.trim().length < 4) return setWizardError('Indica un indirizzo o riferimento dell’area (almeno 4 caratteri).');
+    if (!wizardAddressValidation?.validated) return setWizardError('Conferma prima la validazione dell’indirizzo.');
     setWizardLoading(true); setWizardError('');
     try {
       const create = await api.post('/v1/segnalazioni/wizard', {
@@ -240,8 +313,9 @@ export default function App() {
         titolo: wizardTitle.trim(),
         descrizione: wizardDescription.trim(),
         address: wizardAddress.trim(),
-        tags: wizardTags.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 10),
-        metadata: { source: 'wizard_step4', duplicate_candidate_id: wizardDuplicateOf || undefined, duplicate_check_mode: duplicateMode ?? 'fallback_list' }
+        tag_slugs: wizardSelectedTagSlugs,
+        address_validation: wizardAddressValidation,
+        metadata: { source: 'wizard_step3_assisted', duplicate_candidate_id: wizardDuplicateOf || undefined, duplicate_check_mode: duplicateMode ?? 'fallback_list' }
       }, { headers });
       const created = create.data as Segnalazione;
       if (created.id) {
@@ -293,7 +367,7 @@ export default function App() {
       {activeScreen === 'wizard' && <section className="screen card">
         {wizardStep === 1 && <form className="screen" onSubmit={wizardStep1}><p className="eyebrow">Nuova segnalazione • Step 1 di 3</p><h2>Descrivi il problema</h2><label>Titolo<input aria-label="Titolo segnalazione" value={wizardTitle} onChange={(e) => setWizardTitle(e.target.value)} /></label><label>Descrizione<textarea aria-label="Descrizione segnalazione" value={wizardDescription} onChange={(e) => setWizardDescription(e.target.value)} /></label>{wizardError && <p className="error-text">{wizardError}</p>}<div className="row-actions"><button type="button" onClick={() => setActiveScreen('home')}>Annulla</button><button type="submit" className="primary">Prosegui</button></div></form>}
         {wizardStep === 2 && <div className="screen"><p className="eyebrow">Nuova segnalazione • Step 2 di 3</p><h2>Controllo possibili duplicati</h2><div className="ai-insight" aria-label="Suggerimento duplicati"><p className="eyebrow">Verifica automatica</p><strong>{duplicateCandidates.length > 0 ? 'Segnalazioni simili trovate' : 'Nessun duplicato rilevante trovato'}</strong><p>{duplicateMode === 'endpoint' ? 'Controllo effettuato con endpoint dedicato duplicati.' : 'Controllo effettuato tramite ricerca deterministica su elenco segnalazioni.'}</p></div><ul className="plain-list">{duplicateCandidates.map((d) => <li key={d.id ?? d.codice}><div><strong>{d.titolo ?? 'Segnalazione simile'}</strong><p>{d.codice ?? d.id} • {statoLabel(d.stato)}</p></div><button type="button" onClick={() => setWizardDuplicateOf(d.id ?? '')}>{wizardDuplicateOf === d.id ? 'Selezionata' : 'Segna come simile'}</button></li>)}</ul><div className="row-actions"><button type="button" onClick={() => setWizardStep(1)}>Indietro</button><button type="button" className="primary" onClick={() => setWizardStep(3)}>Continua</button></div></div>}
-        {wizardStep === 3 && <form className="screen" onSubmit={submitWizard}><p className="eyebrow">Nuova segnalazione • Step 3 di 3</p><h2>Conferma e invia</h2><label>Indirizzo / riferimento area<input aria-label="Indirizzo segnalazione" value={wizardAddress} onChange={(e) => setWizardAddress(e.target.value)} /></label><label>Tag (separati da virgola)<input aria-label="Tag segnalazione" value={wizardTags} onChange={(e) => setWizardTags(e.target.value)} /></label>{wizardError && <p className="error-text">{wizardError}</p>}<div className="row-actions"><button type="button" onClick={() => setWizardStep(2)}>Indietro</button><button type="submit" className="primary" disabled={wizardLoading}>{wizardLoading ? 'Invio...' : 'Invia segnalazione'}</button></div></form>}
+        {wizardStep === 3 && <form className="screen" onSubmit={submitWizard}><p className="eyebrow">Nuova segnalazione • Step 3 di 3</p><h2>Conferma e invia</h2><label>Indirizzo / riferimento area<input aria-label="Indirizzo segnalazione" value={wizardAddress} onChange={(e) => { setWizardAddress(e.target.value); setWizardAddressValidation(null); }} /></label><ul className="plain-list docs-list">{wizardAddressSuggestions.map((item) => <li key={item.id}><button type="button" onClick={() => { setWizardAddress(item.address); setWizardAddressCatalogId(item.id); setWizardAddressValidation(null); }}>{item.address} • {item.reference_code}</button></li>)}</ul><div className="inline-actions"><button type="button" onClick={() => void validateWizardAddress()}>Valida indirizzo</button>{wizardAddressValidation?.validated ? <span className="success-text">Indirizzo verificato</span> : <span className="muted">Indirizzo non verificato</span>}</div><label>Tag guidati</label><input aria-label="Ricerca tag segnalazione" placeholder="Cerca tag" value={wizardTagFilter} onChange={(e) => setWizardTagFilter(e.target.value)} /><div className="chips" aria-label="Tag assistiti">{wizardTagOptions.map((tag) => <button type="button" key={tag.id} className={wizardSelectedTagSlugs.includes(tag.slug) ? 'primary' : ''} onClick={() => toggleWizardTag(tag.slug)}>{tag.label}</button>)}</div>{wizardSelectedTagSlugs.length > 0 && <p className="muted">Selezionati: {wizardSelectedTagSlugs.join(', ')}</p>}{wizardError && <p className="error-text">{wizardError}</p>}<div className="row-actions"><button type="button" onClick={() => setWizardStep(2)}>Indietro</button><button type="submit" className="primary" disabled={wizardLoading || !wizardAddressValidation?.validated}>{wizardLoading ? 'Invio...' : 'Invia segnalazione'}</button></div></form>}
       </section>}
 
       {activeScreen === 'priorita' && <section className="screen card"><p className="eyebrow">Classifica segnalazioni</p><h2>Priorità del territorio</h2><div className="chips" aria-label="Categorie priorità">{priorityCategories.map((cat) => <span key={cat}>{cat}</span>)}</div><ul className="plain-list">{priorityItems.map((p) => <li key={p.id}><div><strong>{p.titolo}</strong><p>{p.categoria} • Trend {p.trend}</p></div><button type="button" onClick={() => toggleSupport(p.id)}>Supporta ({p.supporti})</button></li>)}</ul>{priorityItems.length === 0 && <p className="muted">Nessuna priorità disponibile al momento.</p>}</section>}
