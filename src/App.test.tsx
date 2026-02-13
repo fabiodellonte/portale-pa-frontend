@@ -22,70 +22,70 @@ vi.mock('axios', () => ({
 
 import App from './App';
 
-describe('Portale PA frontend phase 4', () => {
+describe('Portale PA frontend extended scope', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('saves language selection', async () => {
+  function seed(access = { can_manage_branding: false, can_manage_roles: false }) {
     apiMocks.get
       .mockResolvedValueOnce({ data: { language: 'it' } })
-      .mockResolvedValueOnce({ data: { can_manage_branding: false, can_manage_roles: false } })
-      .mockResolvedValueOnce({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } });
+      .mockResolvedValueOnce({ data: access })
+      .mockResolvedValueOnce({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } })
+      .mockResolvedValueOnce({ data: { global: [{ slug: 'g1', title: 'Guida base' }], tenant: [{ slug: 't1', title: 'Guida comune' }] } });
+  }
 
+  it('shows public documentation for all users', async () => {
+    seed();
     render(<App />);
 
-    await userEvent.selectOptions(await screen.findByLabelText('Lingua'), 'en');
-    await userEvent.click(screen.getByRole('button', { name: 'Salva lingua' }));
-
-    await waitFor(() => {
-      expect(apiMocks.put).toHaveBeenCalledWith('/v1/me/preferences/language', { language: 'en' }, expect.any(Object));
-    });
+    expect(await screen.findByText('Guida base')).toBeInTheDocument();
+    expect(screen.getByText('Guida comune')).toBeInTheDocument();
   });
 
-  it('shows branding form only for tenant admin and saves', async () => {
-    apiMocks.get
-      .mockResolvedValueOnce({ data: { language: 'it' } })
-      .mockResolvedValueOnce({ data: { can_manage_branding: true, can_manage_roles: false } })
-      .mockResolvedValueOnce({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } });
-
+  it('submits bug report flow', async () => {
+    seed();
+    apiMocks.post.mockResolvedValue({ data: { id: 'b1', notified_admins: 2 } });
     render(<App />);
 
-    const primary = await screen.findByLabelText('Colore primario');
-    await userEvent.clear(primary);
-    await userEvent.type(primary, '#123456');
-    await userEvent.click(screen.getByRole('button', { name: 'Salva branding' }));
+    await userEvent.type(await screen.findByLabelText('Titolo bug'), 'Errore login');
+    await userEvent.type(screen.getByLabelText('Descrizione bug'), 'Dopo login compare pagina bianca in area personale.');
+    await userEvent.click(screen.getByRole('button', { name: 'Invia bug report' }));
 
-    await waitFor(() => {
-      expect(apiMocks.put).toHaveBeenCalledWith(expect.stringContaining('/branding'), expect.objectContaining({ primary_color: '#123456' }), expect.any(Object));
-    });
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/v1/bug-reports', expect.any(Object), expect.any(Object)));
   });
 
-  it('hides role management for non-global admin', async () => {
-    apiMocks.get
-      .mockResolvedValueOnce({ data: { language: 'it' } })
-      .mockResolvedValueOnce({ data: { can_manage_branding: true, can_manage_roles: false } })
-      .mockResolvedValueOnce({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } });
-
+  it('shows global docs admin section only for global admin', async () => {
+    seed({ can_manage_branding: true, can_manage_roles: false });
     render(<App />);
 
-    expect(await screen.findByText('Amministrazione comunale - Branding')).toBeInTheDocument();
-    expect(screen.queryByText('Global admin - Gestione accessi multi-tenant')).not.toBeInTheDocument();
+    await screen.findByText('Branding comunale');
+    expect(screen.queryByText('Documentazione globale amministrabile (global admin)')).not.toBeInTheDocument();
   });
 
-  it('shows role management for global admin and assigns role', async () => {
-    apiMocks.get
-      .mockResolvedValueOnce({ data: { language: 'it' } })
-      .mockResolvedValueOnce({ data: { can_manage_branding: true, can_manage_roles: true } })
-      .mockResolvedValueOnce({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } });
-
+  it('allows global admin to save global docs', async () => {
+    seed({ can_manage_branding: true, can_manage_roles: true });
+    apiMocks.post.mockResolvedValue({ data: { id: 'g2' } });
     render(<App />);
 
-    await userEvent.type(await screen.findByLabelText('User ID da promuovere'), '1386f06c-8d0c-4a99-a157-d3576447add2');
-    await userEvent.click(screen.getByRole('button', { name: 'Assegna ruolo tenant_admin' }));
+    await userEvent.type(await screen.findByLabelText('Slug globale'), 'faq');
+    await userEvent.type(screen.getByLabelText('Titolo globale'), 'FAQ');
+    await userEvent.type(screen.getByLabelText('Contenuto globale'), 'Contenuto istituzionale della faq');
+    await userEvent.click(screen.getByRole('button', { name: 'Salva doc globale' }));
 
-    await waitFor(() => {
-      expect(apiMocks.put).toHaveBeenCalledWith(expect.stringContaining('/v1/admin/roles/'), expect.objectContaining({ role_code: 'tenant_admin' }), expect.any(Object));
-    });
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/v1/admin/docs/global', expect.objectContaining({ slug: 'faq' }), expect.any(Object)));
+  });
+
+  it('allows tenant admin/global admin to save tenant docs', async () => {
+    seed({ can_manage_branding: true, can_manage_roles: false });
+    apiMocks.post.mockResolvedValue({ data: { id: 't2' } });
+    render(<App />);
+
+    await userEvent.type(await screen.findByLabelText('Slug tenant'), 'servizi');
+    await userEvent.type(screen.getByLabelText('Titolo tenant'), 'Servizi comunali');
+    await userEvent.type(screen.getByLabelText('Contenuto tenant'), 'Pagina servizi del comune.');
+    await userEvent.click(screen.getByRole('button', { name: 'Salva doc tenant' }));
+
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(expect.stringContaining('/v1/admin/docs/tenant/'), expect.objectContaining({ slug: 'servizi' }), expect.any(Object)));
   });
 });
