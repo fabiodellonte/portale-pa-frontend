@@ -56,7 +56,6 @@ describe('Portale PA frontend extended scope', () => {
     seed();
     render(<App />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Segnala bug' }));
     await userEvent.type(await screen.findByLabelText('Titolo bug'), 'Errore login');
     await userEvent.type(screen.getByLabelText('Descrizione bug'), 'Dopo login compare pagina bianca in area personale.');
     await userEvent.click(screen.getByRole('button', { name: 'Invia bug report' }));
