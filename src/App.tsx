@@ -1,5 +1,12 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import { Badge } from './components/ui/Badge';
+import { BottomNav } from './components/ui/BottomNav';
+import { Button } from './components/ui/Button';
+import { Card } from './components/ui/Card';
+import { Chip } from './components/ui/Chip';
+import { Input, TextArea } from './components/ui/Input';
+import { THEME_STORAGE_KEY, ThemeMode, applyTheme, getInitialTheme } from './theme/tokens';
 
 type PortalRole = 'admin' | 'maintainer' | 'citizen';
 type Access = {
@@ -8,8 +15,6 @@ type Access = {
   tenant_ids?: string[];
   portal_role?: PortalRole;
   portal_roles?: PortalRole[];
-  can_manage_branding?: boolean;
-  can_manage_roles?: boolean;
 };
 type Branding = { primary_color: string; secondary_color: string; logo_url?: string | null };
 type Doc = { slug: string; title: string };
@@ -25,7 +30,6 @@ type Segnalazione = {
   author_id?: string;
   votes_count?: number;
   supporti?: number;
-  metadata?: Record<string, unknown>;
   updated_at?: string;
   timeline?: Array<{ id?: string; message?: string; event_type?: string; created_at?: string }>;
 };
@@ -42,19 +46,12 @@ type AddressValidation = {
   reference_code: string;
   lat: number;
   lng: number;
-  confidence?: number;
 };
 
 type Screen = 'login' | 'home' | 'wizard' | 'priorita' | 'dettaglio';
 type WizardStep = 1 | 2 | 3;
 type DevProfileKey = 'citizen_demo' | 'maintainer_demo' | 'admin_demo';
-
-type DevProfile = {
-  key: DevProfileKey;
-  label: string;
-  userId: string;
-  tenantId: string;
-};
+type DevProfile = { key: DevProfileKey; label: string; userId: string; tenantId: string };
 
 const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:18080` });
 const defaultTenant = '00000000-0000-0000-0000-000000000001';
@@ -74,6 +71,7 @@ function getSearchString(v: string) {
 
 export default function App() {
   const devProfileSwitchEnabled = true;
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => getInitialTheme());
   const [tenantId, setTenantId] = useState(defaultTenant);
   const [userId, setUserId] = useState(defaultUser);
   const [selectedDevProfile, setSelectedDevProfile] = useState<DevProfileKey>('citizen_demo');
@@ -110,8 +108,12 @@ export default function App() {
   const [demoModeFeedback, setDemoModeFeedback] = useState('');
 
   const headers = useMemo(() => ({ 'x-user-id': userId, 'x-tenant-id': tenantId }), [tenantId, userId]);
-
   const isAdmin = (access?.portal_roles ?? []).includes('admin') || access?.portal_role === 'admin';
+
+  useEffect(() => {
+    applyTheme(themeMode);
+    localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+  }, [themeMode]);
 
   const userSettingsLinks = useMemo(() => {
     const roleSet = new Set(access?.portal_roles ?? (access?.portal_role ? [access.portal_role] : []));
@@ -125,28 +127,22 @@ export default function App() {
         { label: 'Accedi come cittadino', href: `/dashboard?tenant_id=${currentTenant}&view_as=citizen` }
       ];
     }
-
-    if (roleSet.has('maintainer')) {
-      return ownedTenants.map((id) => ({ label: `Area maintainer • tenant ${id}`, href: `/maintainer?tenant_id=${id}` }));
-    }
-
+    if (roleSet.has('maintainer')) return ownedTenants.map((id) => ({ label: `Area maintainer • tenant ${id}`, href: `/maintainer?tenant_id=${id}` }));
     return [] as Array<{ label: string; href: string }>;
   }, [access, tenantId]);
 
   useEffect(() => {
     void (async () => {
       try {
-        const [pref, acc, brand, docs] = await Promise.all([
+        const [, acc, brand, docs] = await Promise.all([
           api.get('/v1/me/preferences', { headers }),
           api.get('/v1/me/access', { headers }),
           api.get(`/v1/tenants/${tenantId}/branding`, { headers }).catch(() => ({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } })),
           api.get('/v1/docs/public', { headers })
         ]);
-        const next = acc.data ?? {};
-        setAccess(next);
+        setAccess(acc.data ?? {});
         setBranding(brand.data);
         setPublicDocs(docs.data ?? { global: [], tenant: [] });
-        void pref;
       } catch {
         setPublicDocs({ global: [], tenant: [] });
       }
@@ -196,12 +192,7 @@ export default function App() {
   }, [activeScreen, detail?.id, headers, tenantId]);
 
   useEffect(() => {
-    if (!isAdmin) {
-      setDemoModeState('unknown');
-      setDemoModeOutput('');
-      return;
-    }
-
+    if (!isAdmin) return;
     void (async () => {
       try {
         const res = await api.get('/v1/admin/demo-mode', { headers });
@@ -209,35 +200,9 @@ export default function App() {
         setDemoModeOutput(String(res.data?.output ?? ''));
       } catch {
         setDemoModeState('unknown');
-        setDemoModeOutput('Funzione non disponibile (flag backend disattivo o endpoint non raggiungibile).');
       }
     })();
   }, [headers, isAdmin]);
-
-  const openWizard = () => {
-    setWizardStep(1); setWizardError(''); setWizardTitle(''); setWizardDescription(''); setWizardAddress(''); setWizardAddressCatalogId(''); setWizardAddressSuggestions([]); setWizardAddressValidation(null); setWizardTagFilter(''); setWizardSelectedTagSlugs([]); setWizardDuplicateOf(''); setDuplicateCandidates([]); setDuplicateMode(null); setActiveScreen('wizard');
-  };
-
-  const onDevProfileChange = (profileKey: DevProfileKey) => {
-    const profile = devProfiles.find((item) => item.key === profileKey);
-    if (!profile) return;
-    setSelectedDevProfile(profileKey);
-    setUserId(profile.userId);
-    setTenantId(profile.tenantId);
-    setAccess(null);
-    setDetail(null);
-  };
-
-  const checkDuplicates = async () => {
-    const search = getSearchString(wizardTitle);
-    try {
-      const r = await api.get('/v1/segnalazioni/duplicates', { headers, params: { tenant_id: tenantId, titolo: wizardTitle } });
-      setDuplicateCandidates((r.data?.items ?? []) as Segnalazione[]); setDuplicateMode('endpoint');
-    } catch {
-      const r = await api.get('/v1/segnalazioni', { headers, params: { tenant_id: tenantId, page: 1, page_size: 5, search, sort: 'updated_at.desc' } });
-      setDuplicateCandidates((r.data?.items ?? []) as Segnalazione[]); setDuplicateMode('fallback');
-    }
-  };
 
   useEffect(() => {
     if (activeScreen !== 'wizard') return;
@@ -256,19 +221,40 @@ export default function App() {
       if (wizardAddress.trim().length < 2) setWizardAddressSuggestions([]);
       return;
     }
-
     void (async () => {
       try {
-        const addressRes = await api.get('/v1/segnalazioni/assisted-addresses', {
-          headers,
-          params: { tenant_id: tenantId, q: wizardAddress.trim(), limit: 5 }
-        });
+        const addressRes = await api.get('/v1/segnalazioni/assisted-addresses', { headers, params: { tenant_id: tenantId, q: wizardAddress.trim(), limit: 5 } });
         setWizardAddressSuggestions((addressRes.data?.items ?? []) as AssistedAddress[]);
       } catch {
         setWizardAddressSuggestions([]);
       }
     })();
   }, [activeScreen, headers, tenantId, wizardAddress, wizardStep]);
+
+  const onDevProfileChange = (profileKey: DevProfileKey) => {
+    const profile = devProfiles.find((item) => item.key === profileKey);
+    if (!profile) return;
+    setSelectedDevProfile(profileKey);
+    setUserId(profile.userId);
+    setTenantId(profile.tenantId);
+    setAccess(null);
+    setDetail(null);
+  };
+
+  const openWizard = () => {
+    setWizardStep(1); setWizardError(''); setWizardTitle(''); setWizardDescription(''); setWizardAddress(''); setWizardAddressCatalogId(''); setWizardAddressSuggestions([]); setWizardAddressValidation(null); setWizardTagFilter(''); setWizardSelectedTagSlugs([]); setWizardDuplicateOf(''); setDuplicateCandidates([]); setDuplicateMode(null); setActiveScreen('wizard');
+  };
+
+  const checkDuplicates = async () => {
+    const search = getSearchString(wizardTitle);
+    try {
+      const r = await api.get('/v1/segnalazioni/duplicates', { headers, params: { tenant_id: tenantId, titolo: wizardTitle } });
+      setDuplicateCandidates((r.data?.items ?? []) as Segnalazione[]); setDuplicateMode('endpoint');
+    } catch {
+      const r = await api.get('/v1/segnalazioni', { headers, params: { tenant_id: tenantId, page: 1, page_size: 5, search, sort: 'updated_at.desc' } });
+      setDuplicateCandidates((r.data?.items ?? []) as Segnalazione[]); setDuplicateMode('fallback');
+    }
+  };
 
   const wizardStep1 = async (e: FormEvent) => {
     e.preventDefault();
@@ -277,22 +263,10 @@ export default function App() {
     setWizardError(''); setWizardStep(2); await checkDuplicates();
   };
 
-  const toggleWizardTag = (slug: string) => {
-    setWizardSelectedTagSlugs((current) => current.includes(slug) ? current.filter((entry) => entry !== slug) : [...current, slug].slice(0, 10));
-  };
-
   const validateWizardAddress = async () => {
-    if (!wizardAddressCatalogId || wizardAddress.trim().length < 3) {
-      setWizardError('Seleziona un indirizzo suggerito prima della validazione.');
-      return;
-    }
-
+    if (!wizardAddressCatalogId || wizardAddress.trim().length < 3) return setWizardError('Seleziona un indirizzo suggerito prima della validazione.');
     try {
-      const res = await api.post('/v1/segnalazioni/assisted-addresses/validate', {
-        tenant_id: tenantId,
-        catalog_id: wizardAddressCatalogId,
-        address: wizardAddress.trim()
-      }, { headers });
+      const res = await api.post('/v1/segnalazioni/assisted-addresses/validate', { tenant_id: tenantId, catalog_id: wizardAddressCatalogId, address: wizardAddress.trim() }, { headers });
       setWizardAddressValidation(res.data as AddressValidation);
       setWizardError('');
     } catch {
@@ -307,23 +281,12 @@ export default function App() {
     if (!wizardAddressValidation?.validated) return setWizardError('Conferma prima la validazione dell’indirizzo.');
     setWizardLoading(true); setWizardError('');
     try {
-      const create = await api.post('/v1/segnalazioni/wizard', {
-        tenant_id: tenantId,
-        user_id: userId,
-        titolo: wizardTitle.trim(),
-        descrizione: wizardDescription.trim(),
-        address: wizardAddress.trim(),
-        tag_slugs: wizardSelectedTagSlugs,
-        address_validation: wizardAddressValidation,
-        metadata: { source: 'wizard_step3_assisted', duplicate_candidate_id: wizardDuplicateOf || undefined, duplicate_check_mode: duplicateMode ?? 'fallback_list' }
-      }, { headers });
+      const create = await api.post('/v1/segnalazioni/wizard', { tenant_id: tenantId, user_id: userId, titolo: wizardTitle.trim(), descrizione: wizardDescription.trim(), address: wizardAddress.trim(), tag_slugs: wizardSelectedTagSlugs, address_validation: wizardAddressValidation, metadata: { source: 'wizard_step3_assisted', duplicate_candidate_id: wizardDuplicateOf || undefined, duplicate_check_mode: duplicateMode ?? 'fallback_list' } }, { headers });
       const created = create.data as Segnalazione;
       if (created.id) {
         const d = await api.get(`/v1/segnalazioni/${created.id}`, { headers });
         setDetail(d.data as Segnalazione);
-      } else {
-        setDetail(created);
-      }
+      } else setDetail(created);
       setActiveScreen('dettaglio');
     } catch {
       setWizardError('Invio non riuscito. Verifica i dati inseriti e riprova.');
@@ -335,9 +298,7 @@ export default function App() {
       const res = await api.post(`/v1/segnalazioni/${id}/vote-toggle`, { tenant_id: tenantId, user_id: userId }, { headers });
       const nextCount = Number(res.data?.votes_count ?? 0);
       setPriorityItems((curr) => curr.map((item) => (item.id === id ? { ...item, supporti: nextCount } : item)));
-    } catch {
-      // no-op: keep previous value
-    }
+    } catch {}
   };
 
   const switchDemoMode = async (mode: 'on' | 'off') => {
@@ -355,26 +316,40 @@ export default function App() {
     }
   };
 
-  const priorityCategories = Array.from(new Set(priorityItems.map((p) => p.categoria))).slice(0, 6);
-
   return (
     <main className="mobile-shell">
-      {devProfileSwitchEnabled && <section className="card dev-profile-switcher" data-testid="dev-profile-switcher"><div className="dev-profile-switcher__header"><p className="eyebrow">Dev profile switch</p><span className="test-mode-badge">MODALITÀ TEST</span></div><label>Profilo simulato<select aria-label="Profilo sviluppo" value={selectedDevProfile} onChange={(e) => onDevProfileChange(e.target.value as DevProfileKey)}>{devProfiles.map((profile) => <option key={profile.key} value={profile.key}>{profile.label}</option>)}</select></label><p className="muted">Header API effettivi: x-user-id {userId} • x-tenant-id {tenantId}</p></section>}
-      {activeScreen === 'login' && <section className="screen card institutional-login"><p className="eyebrow">Portale Istituzionale Segnalazioni</p><h1>Accedi con identità digitale</h1><p className="muted">Servizio comunale per segnalazioni, priorità e aggiornamenti sul territorio.</p><div className="spid-card"><strong>SPID / CIE</strong><p>Autenticazione sicura per cittadini e operatori.</p><button type="button" onClick={() => setActiveScreen('home')}>Entra con SPID</button></div></section>}
+      {devProfileSwitchEnabled && (
+        <Card className="dev-profile-switcher" testId="dev-profile-switcher">
+          <div className="dev-profile-switcher__header"><p className="eyebrow">Dev profile switch</p><Badge tone="warning">MODALITÀ TEST</Badge></div>
+          <label>Profilo simulato<select aria-label="Profilo sviluppo" value={selectedDevProfile} onChange={(e) => onDevProfileChange(e.target.value as DevProfileKey)}>{devProfiles.map((profile) => <option key={profile.key} value={profile.key}>{profile.label}</option>)}</select></label>
+          <div className="inline-actions"><Button type="button" onClick={() => setThemeMode((t) => t === 'light' ? 'dark' : 'light')}>Tema: {themeMode === 'light' ? 'Chiaro' : 'Scuro'}</Button></div>
+          <p className="muted">Header API effettivi: x-user-id {userId} • x-tenant-id {tenantId}</p>
+        </Card>
+      )}
 
-      {activeScreen === 'home' && <section className="screen home-screen"><header className="card welcome"><p className="eyebrow">Comune di riferimento</p><h2>Benvenuto nel portale segnalazioni</h2><p className="muted">Consulta aggiornamenti, crea nuove segnalazioni e monitora lo stato delle tue richieste.</p><button type="button" className="primary" onClick={openWizard}>Crea segnalazione</button></header><article className="card"><h3>In evidenza</h3>{homeError && <p className="muted">{homeError}</p>}<div className="horizontal-list">{featuredItems.map((i) => <div key={i.title} className="feature-card"><span>{i.badge}</span><strong>{i.title}</strong><p>{i.text}</p></div>)}</div></article><article className="card"><h3>Le mie segnalazioni</h3><ul className="plain-list">{myReports.map((r) => <li key={r.id}><div><strong>{r.titolo}</strong><p>{r.id} • {r.stato}</p></div><small>{r.supporti} supporti</small></li>)}</ul></article><article className="card"><h3>Documentazione pubblica</h3><ul className="plain-list docs-list">{[...(publicDocs.global ?? []), ...(publicDocs.tenant ?? [])].map((d) => <li key={d.slug}>{d.title}</li>)}</ul></article><article className="card"><h3>Impostazioni utente</h3><p className="muted">Gestione profilo e accessi al portale.</p>{userSettingsLinks.length > 0 ? <ul className="plain-list docs-list settings-links">{userSettingsLinks.map((link) => <li key={link.href}><a href={link.href}>{link.label}</a></li>)}</ul> : <p className="muted">Nessuna area amministrativa disponibile per il tuo profilo.</p>}{isAdmin && <section className="demo-mode-panel" aria-label="Modalità Test DB"><h4>Modalità Test DB</h4><p className="muted warning-text">⚠️ Solo sviluppo locale. Non abilitare in produzione. Flag richiesto: ENABLE_DEMO_MODE_SWITCH=true.</p><p className="muted">Stato corrente: <strong>{demoModeState === 'on' ? 'ON' : demoModeState === 'off' ? 'OFF' : 'SCONOSCIUTO'}</strong></p><div className="inline-actions"><button type="button" onClick={() => switchDemoMode('on')} disabled={demoModeBusy}>ON</button><button type="button" onClick={() => switchDemoMode('off')} disabled={demoModeBusy}>OFF</button></div>{demoModeFeedback && <p className="success-text">{demoModeFeedback}</p>}{demoModeOutput && <p className="muted demo-mode-output">{demoModeOutput}</p>}</section>}</article></section>}
+      {activeScreen === 'login' && <Card className="screen institutional-login"><p className="eyebrow">Portale Istituzionale Segnalazioni</p><h1>Accedi con identità digitale</h1><p className="muted">Servizio comunale per segnalazioni, priorità e aggiornamenti sul territorio.</p><div className="spid-card"><strong>SPID / CIE</strong><p>Autenticazione sicura per cittadini e operatori.</p><Button type="button" variant="primary" onClick={() => setActiveScreen('home')}>Entra con SPID</Button></div></Card>}
 
-      {activeScreen === 'wizard' && <section className="screen card">
-        {wizardStep === 1 && <form className="screen" onSubmit={wizardStep1}><p className="eyebrow">Nuova segnalazione • Step 1 di 3</p><h2>Descrivi il problema</h2><label>Titolo<input aria-label="Titolo segnalazione" value={wizardTitle} onChange={(e) => setWizardTitle(e.target.value)} /></label><label>Descrizione<textarea aria-label="Descrizione segnalazione" value={wizardDescription} onChange={(e) => setWizardDescription(e.target.value)} /></label>{wizardError && <p className="error-text">{wizardError}</p>}<div className="row-actions"><button type="button" onClick={() => setActiveScreen('home')}>Annulla</button><button type="submit" className="primary">Prosegui</button></div></form>}
-        {wizardStep === 2 && <div className="screen"><p className="eyebrow">Nuova segnalazione • Step 2 di 3</p><h2>Controllo possibili duplicati</h2><div className="ai-insight" aria-label="Suggerimento duplicati"><p className="eyebrow">Verifica automatica</p><strong>{duplicateCandidates.length > 0 ? 'Segnalazioni simili trovate' : 'Nessun duplicato rilevante trovato'}</strong><p>{duplicateMode === 'endpoint' ? 'Controllo effettuato con endpoint dedicato duplicati.' : 'Controllo effettuato tramite ricerca deterministica su elenco segnalazioni.'}</p></div><ul className="plain-list">{duplicateCandidates.map((d) => <li key={d.id ?? d.codice}><div><strong>{d.titolo ?? 'Segnalazione simile'}</strong><p>{d.codice ?? d.id} • {statoLabel(d.stato)}</p></div><button type="button" onClick={() => setWizardDuplicateOf(d.id ?? '')}>{wizardDuplicateOf === d.id ? 'Selezionata' : 'Segna come simile'}</button></li>)}</ul><div className="row-actions"><button type="button" onClick={() => setWizardStep(1)}>Indietro</button><button type="button" className="primary" onClick={() => setWizardStep(3)}>Continua</button></div></div>}
-        {wizardStep === 3 && <form className="screen" onSubmit={submitWizard}><p className="eyebrow">Nuova segnalazione • Step 3 di 3</p><h2>Conferma e invia</h2><label>Indirizzo / riferimento area<input aria-label="Indirizzo segnalazione" value={wizardAddress} onChange={(e) => { setWizardAddress(e.target.value); setWizardAddressValidation(null); }} /></label><ul className="plain-list docs-list">{wizardAddressSuggestions.map((item) => <li key={item.id}><button type="button" onClick={() => { setWizardAddress(item.address); setWizardAddressCatalogId(item.id); setWizardAddressValidation(null); }}>{item.address} • {item.reference_code}</button></li>)}</ul><div className="inline-actions"><button type="button" onClick={() => void validateWizardAddress()}>Valida indirizzo</button>{wizardAddressValidation?.validated ? <span className="success-text">Indirizzo verificato</span> : <span className="muted">Indirizzo non verificato</span>}</div><label>Tag guidati</label><input aria-label="Ricerca tag segnalazione" placeholder="Cerca tag" value={wizardTagFilter} onChange={(e) => setWizardTagFilter(e.target.value)} /><div className="chips" aria-label="Tag assistiti">{wizardTagOptions.map((tag) => <button type="button" key={tag.id} className={wizardSelectedTagSlugs.includes(tag.slug) ? 'primary' : ''} onClick={() => toggleWizardTag(tag.slug)}>{tag.label}</button>)}</div>{wizardSelectedTagSlugs.length > 0 && <p className="muted">Selezionati: {wizardSelectedTagSlugs.join(', ')}</p>}{wizardError && <p className="error-text">{wizardError}</p>}<div className="row-actions"><button type="button" onClick={() => setWizardStep(2)}>Indietro</button><button type="submit" className="primary" disabled={wizardLoading || !wizardAddressValidation?.validated}>{wizardLoading ? 'Invio...' : 'Invia segnalazione'}</button></div></form>}
-      </section>}
+      {activeScreen === 'home' && <section className="screen home-screen"><Card as="header" className="welcome"><p className="eyebrow">Comune di riferimento</p><h2>Benvenuto nel portale segnalazioni</h2><p className="muted">Consulta aggiornamenti, crea nuove segnalazioni e monitora lo stato delle tue richieste.</p><Button type="button" variant="primary" onClick={openWizard}>Crea segnalazione</Button></Card><Card as="article"><h3>In evidenza</h3>{homeError && <p className="muted">{homeError}</p>}<div className="horizontal-list">{featuredItems.map((i) => <div key={i.title} className="feature-card"><Badge>{i.badge}</Badge><strong>{i.title}</strong><p>{i.text}</p></div>)}</div></Card><Card as="article"><h3>Le mie segnalazioni</h3><ul className="plain-list">{myReports.map((r) => <li key={r.id}><div><strong>{r.titolo}</strong><p>{r.id} • {r.stato}</p></div><small>{r.supporti} supporti</small></li>)}</ul></Card><Card as="article"><h3>Documentazione pubblica</h3><ul className="plain-list docs-list">{[...(publicDocs.global ?? []), ...(publicDocs.tenant ?? [])].map((d) => <li key={d.slug}>{d.title}</li>)}</ul></Card><Card as="article"><h3>Impostazioni utente</h3><p className="muted">Gestione profilo e accessi al portale.</p><div className="inline-actions"><Button type="button" onClick={() => setThemeMode((t) => t === 'light' ? 'dark' : 'light')}>Tema: {themeMode === 'light' ? 'Chiaro' : 'Scuro'}</Button></div>{userSettingsLinks.length > 0 ? <ul className="plain-list docs-list settings-links">{userSettingsLinks.map((link) => <li key={link.href}><a href={link.href}>{link.label}</a></li>)}</ul> : <p className="muted">Nessuna area amministrativa disponibile per il tuo profilo.</p>}{isAdmin && <section className="demo-mode-panel" aria-label="Modalità Test DB"><h4>Modalità Test DB</h4><p className="muted warning-text">⚠️ Solo sviluppo locale. Non abilitare in produzione. Flag richiesto: ENABLE_DEMO_MODE_SWITCH=true.</p><p className="muted">Stato corrente: <strong>{demoModeState === 'on' ? 'ON' : demoModeState === 'off' ? 'OFF' : 'SCONOSCIUTO'}</strong></p><div className="inline-actions"><Button type="button" onClick={() => switchDemoMode('on')} disabled={demoModeBusy}>ON</Button><Button type="button" onClick={() => switchDemoMode('off')} disabled={demoModeBusy}>OFF</Button></div>{demoModeFeedback && <p className="success-text">{demoModeFeedback}</p>}{demoModeOutput && <p className="muted demo-mode-output">{demoModeOutput}</p>}</section>}</Card></section>}
 
-      {activeScreen === 'priorita' && <section className="screen card"><p className="eyebrow">Classifica segnalazioni</p><h2>Priorità del territorio</h2><div className="chips" aria-label="Categorie priorità">{priorityCategories.map((cat) => <span key={cat}>{cat}</span>)}</div><ul className="plain-list">{priorityItems.map((p) => <li key={p.id}><div><strong>{p.titolo}</strong><p>{p.categoria} • Trend {p.trend}</p></div><button type="button" onClick={() => toggleSupport(p.id)}>Supporta ({p.supporti})</button></li>)}</ul>{priorityItems.length === 0 && <p className="muted">Nessuna priorità disponibile al momento.</p>}</section>}
+      {activeScreen === 'wizard' && <Card className="screen">
+        {wizardStep === 1 && <form className="screen" onSubmit={wizardStep1}><p className="eyebrow">Nuova segnalazione • Step 1 di 3</p><h2>Descrivi il problema</h2><label>Titolo<Input aria-label="Titolo segnalazione" value={wizardTitle} onChange={(e) => setWizardTitle(e.target.value)} /></label><label>Descrizione<TextArea aria-label="Descrizione segnalazione" value={wizardDescription} onChange={(e) => setWizardDescription(e.target.value)} /></label>{wizardError && <p className="error-text">{wizardError}</p>}<div className="row-actions"><Button type="button" onClick={() => setActiveScreen('home')}>Annulla</Button><Button type="submit" variant="primary">Prosegui</Button></div></form>}
+        {wizardStep === 2 && <div className="screen"><p className="eyebrow">Nuova segnalazione • Step 2 di 3</p><h2>Controllo possibili duplicati</h2><div className="ai-insight" aria-label="Suggerimento duplicati"><p className="eyebrow">Verifica automatica</p><strong>{duplicateCandidates.length > 0 ? 'Segnalazioni simili trovate' : 'Nessun duplicato rilevante trovato'}</strong><p>{duplicateMode === 'endpoint' ? 'Controllo effettuato con endpoint dedicato duplicati.' : 'Controllo effettuato tramite ricerca deterministica su elenco segnalazioni.'}</p></div><ul className="plain-list">{duplicateCandidates.map((d) => <li key={d.id ?? d.codice}><div><strong>{d.titolo ?? 'Segnalazione simile'}</strong><p>{d.codice ?? d.id} • {statoLabel(d.stato)}</p></div><Button type="button" onClick={() => setWizardDuplicateOf(d.id ?? '')}>{wizardDuplicateOf === d.id ? 'Selezionata' : 'Segna come simile'}</Button></li>)}</ul><div className="row-actions"><Button type="button" onClick={() => setWizardStep(1)}>Indietro</Button><Button type="button" variant="primary" onClick={() => setWizardStep(3)}>Continua</Button></div></div>}
+        {wizardStep === 3 && <form className="screen" onSubmit={submitWizard}><p className="eyebrow">Nuova segnalazione • Step 3 di 3</p><h2>Conferma e invia</h2><label>Indirizzo / riferimento area<Input aria-label="Indirizzo segnalazione" value={wizardAddress} onChange={(e) => { setWizardAddress(e.target.value); setWizardAddressValidation(null); }} /></label><ul className="plain-list docs-list">{wizardAddressSuggestions.map((item) => <li key={item.id}><Button type="button" onClick={() => { setWizardAddress(item.address); setWizardAddressCatalogId(item.id); setWizardAddressValidation(null); }}>{item.address} • {item.reference_code}</Button></li>)}</ul><div className="inline-actions"><Button type="button" onClick={() => void validateWizardAddress()}>Valida indirizzo</Button>{wizardAddressValidation?.validated ? <span className="success-text">Indirizzo verificato</span> : <span className="muted">Indirizzo non verificato</span>}</div><label>Tag guidati</label><Input aria-label="Ricerca tag segnalazione" placeholder="Cerca tag" value={wizardTagFilter} onChange={(e) => setWizardTagFilter(e.target.value)} /><div className="chips" aria-label="Tag assistiti">{wizardTagOptions.map((tag) => <button type="button" key={tag.id} className={wizardSelectedTagSlugs.includes(tag.slug) ? 'ui-chip is-active' : 'ui-chip'} onClick={() => setWizardSelectedTagSlugs((current) => current.includes(tag.slug) ? current.filter((entry) => entry !== tag.slug) : [...current, tag.slug].slice(0, 10))}>{tag.label}</button>)}</div>{wizardSelectedTagSlugs.length > 0 && <p className="muted">Selezionati: {wizardSelectedTagSlugs.join(', ')}</p>}{wizardError && <p className="error-text">{wizardError}</p>}<div className="row-actions"><Button type="button" onClick={() => setWizardStep(2)}>Indietro</Button><Button type="submit" variant="primary" disabled={wizardLoading || !wizardAddressValidation?.validated}>{wizardLoading ? 'Invio...' : 'Invia segnalazione'}</Button></div></form>}
+      </Card>}
 
-      {activeScreen === 'dettaglio' && <section className="screen detail-screen"><article className="card"><p className="eyebrow">Dettaglio segnalazione</p>{detail ? <><h2>{detail.codice ?? detail.id} • {detail.titolo ?? 'Segnalazione inviata'}</h2><p className="success-text">Segnalazione registrata con successo. Conserva il codice pubblico per il monitoraggio.</p>{detail.timeline && detail.timeline.length > 0 && <ol className="timeline" aria-label="Timeline stato">{detail.timeline.map((t, i) => <li key={t.id ?? i}><strong>{t.message ?? t.event_type ?? 'Aggiornamento'}</strong><span>{t.created_at ? new Date(t.created_at).toLocaleString('it-IT') : 'Ora non disponibile'}</span></li>)}</ol>}</> : <h2>Nessuna segnalazione disponibile per il dettaglio.</h2>}</article><article className="card"><h3>Descrizione</h3><p>{detail?.descrizione ?? 'Nessun contenuto disponibile.'}</p></article></section>}
+      {activeScreen === 'priorita' && <Card className="screen"><p className="eyebrow">Classifica segnalazioni</p><h2>Priorità del territorio</h2><div className="chips" aria-label="Categorie priorità">{Array.from(new Set(priorityItems.map((p) => p.categoria))).slice(0, 6).map((cat) => <Chip key={cat}>{cat}</Chip>)}</div><ul className="plain-list">{priorityItems.map((p) => <li key={p.id}><div><strong>{p.titolo}</strong><p>{p.categoria} • Trend {p.trend}</p></div><Button type="button" onClick={() => toggleSupport(p.id)}>Supporta ({p.supporti})</Button></li>)}</ul>{priorityItems.length === 0 && <p className="muted">Nessuna priorità disponibile al momento.</p>}</Card>}
 
-      {activeScreen !== 'login' && <nav className="bottom-nav" aria-label="Navigazione mobile"><button type="button" onClick={() => setActiveScreen('home')} className={activeScreen === 'home' ? 'active' : ''}>Home</button><button type="button" onClick={openWizard} className={activeScreen === 'wizard' ? 'active' : ''}>Nuova</button><button type="button" onClick={() => setActiveScreen('priorita')} className={activeScreen === 'priorita' ? 'active' : ''}>Priorità</button><button type="button" onClick={() => setActiveScreen('dettaglio')} className={activeScreen === 'dettaglio' ? 'active' : ''}>Dettaglio</button></nav>}
+      {activeScreen === 'dettaglio' && <section className="screen detail-screen"><Card as="article"><p className="eyebrow">Dettaglio segnalazione</p>{detail ? <><h2>{detail.codice ?? detail.id} • {detail.titolo ?? 'Segnalazione inviata'}</h2><p className="success-text">Segnalazione registrata con successo. Conserva il codice pubblico per il monitoraggio.</p>{detail.timeline && detail.timeline.length > 0 && <ol className="timeline" aria-label="Timeline stato">{detail.timeline.map((t, i) => <li key={t.id ?? i}><strong>{t.message ?? t.event_type ?? 'Aggiornamento'}</strong><span>{t.created_at ? new Date(t.created_at).toLocaleString('it-IT') : 'Ora non disponibile'}</span></li>)}</ol>}</> : <h2>Nessuna segnalazione disponibile per il dettaglio.</h2>}</Card><Card as="article"><h3>Descrizione</h3><p>{detail?.descrizione ?? 'Nessun contenuto disponibile.'}</p></Card></section>}
+
+      {activeScreen !== 'login' && <BottomNav
+        activeKey={activeScreen}
+        items={[
+          { key: 'home', label: 'Home', onClick: () => setActiveScreen('home') },
+          { key: 'wizard', label: 'Nuova', onClick: openWizard },
+          { key: 'priorita', label: 'Priorità', onClick: () => setActiveScreen('priorita') },
+          { key: 'dettaglio', label: 'Dettaglio', onClick: () => setActiveScreen('dettaglio') }
+        ]}
+      />}
     </main>
   );
 }

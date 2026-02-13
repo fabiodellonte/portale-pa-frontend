@@ -48,6 +48,7 @@ function primeAccess() {
 
 describe('Portale PA mobile dettaglio', () => {
   beforeEach(() => {
+    localStorage.clear();
     getMock.mockReset();
     postMock.mockReset();
     demoModeState = 'off';
@@ -75,6 +76,18 @@ describe('Portale PA mobile dettaglio', () => {
     vi.unstubAllEnvs();
   });
 
+  it('restores theme from localStorage and toggles persistently', async () => {
+    localStorage.setItem('portale-pa-theme-mode', 'dark');
+    render(<App />);
+
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'));
+    expect(screen.getAllByRole('button', { name: 'Tema: Scuro' }).length).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Tema: Scuro' })[0]);
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('light'));
+    expect(localStorage.getItem('portale-pa-theme-mode')).toBe('light');
+  });
+
   it('hides bottom nav before authentication and keeps direct dashboard login flow', async () => {
     render(<App />);
     expect(screen.queryByRole('navigation', { name: 'Navigazione mobile' })).not.toBeInTheDocument();
@@ -83,6 +96,13 @@ describe('Portale PA mobile dettaglio', () => {
 
     expect(await screen.findByRole('heading', { name: 'Benvenuto nel portale segnalazioni' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Navigazione mobile' })).toBeInTheDocument();
+  });
+
+  it('smoke renders Login and Home with new visual shell', async () => {
+    render(<App />);
+    expect(screen.getByRole('heading', { name: 'Accedi con identità digitale' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    expect(await screen.findByRole('heading', { name: 'Benvenuto nel portale segnalazioni' })).toBeInTheDocument();
   });
 
   it('shows dev profile switcher by default with explicit test-mode label', async () => {
