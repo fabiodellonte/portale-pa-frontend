@@ -12,6 +12,26 @@ type Access = {
 type Branding = { logo_url?: string | null; primary_color: string; secondary_color: string };
 type Doc = { id?: string; slug: string; title: string; content_md: string; is_published?: boolean; sort_order?: number };
 type GovernanceItem = { id: string; titolo?: string };
+type Segnalazione = {
+  id?: string;
+  codice?: string;
+  titolo?: string;
+  stato?: string;
+  created_by?: string;
+  reported_by?: string;
+  user_id?: string;
+  author_id?: string;
+  votes_count?: number;
+  supporti?: number;
+  metadata?: Record<string, unknown>;
+  updated_at?: string;
+};
+type PublicMetrics = {
+  total_segnalazioni?: number;
+  total_votes?: number;
+  total_follows?: number;
+  by_status?: Record<string, number>;
+};
 
 type Screen = 'login' | 'home' | 'wizard' | 'priorita' | 'dettaglio';
 
@@ -21,23 +41,27 @@ const api = axios.create({ baseURL: resolvedApiBase });
 const defaultTenant = '00000000-0000-0000-0000-000000000001';
 const defaultUser = '00000000-0000-0000-0000-000000000111';
 
-const featuredItems = [
-  { title: 'Manutenzione strade', text: 'Interventi in corso su via Roma e aree limitrofe.', badge: 'Aggiornato oggi' },
-  { title: 'Illuminazione pubblica', text: 'Piano trimestrale di sostituzione lampioni non funzionanti.', badge: 'In evidenza' },
-  { title: 'Decoro urbano', text: 'Azioni su pulizia e arredo delle piazze principali.', badge: 'Nuovo piano' }
-];
-
-const myReportsMock = [
-  { id: 'SGN-1245', titolo: 'Buche in via Verdi', stato: 'In lavorazione', supporti: 41 },
-  { id: 'SGN-1189', titolo: 'Lampione spento zona stazione', stato: 'Presa in carico', supporti: 18 },
-  { id: 'SGN-1102', titolo: 'Cassonetto danneggiato', stato: 'Risolta', supporti: 12 }
-];
-
 const prioritiesMock = [
   { titolo: 'Sicurezza attraversamento scuola', trend: '+12%', supporti: 189, categoria: 'Viabilità' },
   { titolo: 'Perdite idriche in quartiere nord', trend: '+7%', supporti: 121, categoria: 'Acqua' },
   { titolo: 'Barriere architettoniche marciapiede', trend: '+4%', supporti: 96, categoria: 'Accessibilità' }
 ];
+
+function statoLabel(stato?: string) {
+  if (!stato) return 'In lavorazione';
+  return stato.replaceAll('_', ' ').replace(/^./, (char) => char.toUpperCase());
+}
+
+function supportiDaSegnalazione(item: Segnalazione) {
+  if (typeof item.votes_count === 'number') return item.votes_count;
+  if (typeof item.supporti === 'number') return item.supporti;
+  const metadataVotes = item.metadata?.votes_count;
+  return typeof metadataVotes === 'number' ? metadataVotes : 0;
+}
+
+function segnalazioneIsMine(item: Segnalazione, userId: string) {
+  return item.created_by === userId || item.reported_by === userId || item.user_id === userId || item.author_id === userId;
+}
 
 export default function App() {
   const [tenantId, setTenantId] = useState(defaultTenant);
@@ -63,24 +87,86 @@ export default function App() {
   const [moderationNote, setModerationNote] = useState('');
   const [activeScreen, setActiveScreen] = useState<Screen>('login');
 
+  const [homeLoading, setHomeLoading] = useState(true);
+  const [homeError, setHomeError] = useState('');
+  const [featuredItems, setFeaturedItems] = useState<Array<{ title: string; text: string; badge: string }>>([]);
+  const [myReports, setMyReports] = useState<Array<{ id: string; titolo: string; stato: string; supporti: number }>>([]);
+  const [metrics, setMetrics] = useState<PublicMetrics | null>(null);
+
   const headers = useMemo(() => ({ 'x-user-id': userId, 'x-tenant-id': tenantId }), [tenantId, userId]);
 
   useEffect(() => {
     void (async () => {
-      const [prefRes, accessRes, brandingRes, docsRes] = await Promise.all([
-        api.get('/v1/me/preferences', { headers }),
-        api.get('/v1/me/access', { headers }),
-        api
-          .get(`/v1/tenants/${tenantId}/branding`, { headers })
-          .catch(() => ({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } })),
-        api.get('/v1/docs/public', { headers })
-      ]);
-      setLanguage(prefRes.data.language ?? 'it');
-      setAccess(accessRes.data ?? {});
-      setBranding(brandingRes.data);
-      setPublicDocs(docsRes.data ?? { global: [], tenant: [] });
+      try {
+        const [prefRes, accessRes, brandingRes, docsRes] = await Promise.all([
+          api.get('/v1/me/preferences', { headers }),
+          api.get('/v1/me/access', { headers }),
+          api
+            .get(`/v1/tenants/${tenantId}/branding`, { headers })
+            .catch(() => ({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } })),
+          api.get('/v1/docs/public', { headers })
+        ]);
+        setLanguage(prefRes.data.language ?? 'it');
+        const nextAccess = accessRes.data ?? {};
+        setAccess(nextAccess);
+        setUserId(nextAccess.user_id ?? userId);
+        setTenantId(nextAccess.tenant_id ?? tenantId);
+        setBranding(brandingRes.data);
+        setPublicDocs(docsRes.data ?? { global: [], tenant: [] });
+      } catch {
+        setPublicDocs({ global: [], tenant: [] });
+      }
     })();
-  }, [headers, tenantId]);
+  }, [headers, tenantId, userId]);
+
+  useEffect(() => {
+    void (async () => {
+      setHomeLoading(true);
+      setHomeError('');
+      try {
+        const [segnalazioniRes, metricsRes] = await Promise.all([
+          api.get('/v1/segnalazioni', {
+            headers,
+            params: { tenant_id: tenantId, page: 1, page_size: 50, sort: 'updated_at.desc' }
+          }),
+          api.get('/v1/public/metrics', {
+            headers,
+            params: { tenant_id: tenantId }
+          })
+        ]);
+
+        const allSegnalazioni = (segnalazioniRes.data?.items ?? []) as Segnalazione[];
+        setFeaturedItems(
+          allSegnalazioni.slice(0, 3).map((item) => ({
+            title: item.titolo ?? 'Segnalazione',
+            text: `Stato: ${statoLabel(item.stato)}${item.updated_at ? ` • Agg. ${new Date(item.updated_at).toLocaleDateString('it-IT')}` : ''}`,
+            badge: statoLabel(item.stato)
+          }))
+        );
+
+        setMyReports(
+          allSegnalazioni
+            .filter((item) => segnalazioneIsMine(item, userId))
+            .slice(0, 5)
+            .map((item) => ({
+              id: item.codice ?? item.id ?? 'SGN',
+              titolo: item.titolo ?? 'Segnalazione',
+              stato: statoLabel(item.stato),
+              supporti: supportiDaSegnalazione(item)
+            }))
+        );
+
+        setMetrics(metricsRes.data ?? null);
+      } catch {
+        setHomeError('Al momento non è possibile caricare i dati aggiornati. Riprova più tardi.');
+        setFeaturedItems([]);
+        setMyReports([]);
+        setMetrics(null);
+      } finally {
+        setHomeLoading(false);
+      }
+    })();
+  }, [headers, tenantId, userId]);
 
   useEffect(() => {
     if (!(access?.can_manage_branding || access?.can_manage_roles)) return;
@@ -188,7 +274,22 @@ export default function App() {
           </header>
 
           <article className="card">
+            <h3>Metriche territoriali</h3>
+            {homeLoading && <p className="muted">Caricamento metriche...</p>}
+            {homeError && <p className="muted">{homeError}</p>}
+            {!homeLoading && !homeError && (
+              <ul className="plain-list">
+                <li><strong>Segnalazioni totali</strong><small>{metrics?.total_segnalazioni ?? 0}</small></li>
+                <li><strong>Supporti civici</strong><small>{metrics?.total_votes ?? 0}</small></li>
+                <li><strong>Follow attivi</strong><small>{metrics?.total_follows ?? 0}</small></li>
+              </ul>
+            )}
+          </article>
+
+          <article className="card">
             <h3>In evidenza</h3>
+            {homeLoading && <p className="muted">Caricamento segnalazioni in evidenza...</p>}
+            {!homeLoading && !homeError && featuredItems.length === 0 && <p className="muted">Nessuna segnalazione in evidenza disponibile.</p>}
             <div className="horizontal-list" aria-label="Schede in evidenza">
               {featuredItems.map((item) => (
                 <div key={item.title} className="feature-card">
@@ -202,8 +303,10 @@ export default function App() {
 
           <article className="card">
             <h3>Le mie segnalazioni</h3>
+            {homeLoading && <p className="muted">Caricamento delle tue segnalazioni...</p>}
+            {!homeLoading && !homeError && myReports.length === 0 && <p className="muted">Non risultano segnalazioni create con il tuo profilo.</p>}
             <ul className="plain-list">
-              {myReportsMock.map((report) => (
+              {myReports.map((report) => (
                 <li key={report.id}>
                   <div>
                     <strong>{report.titolo}</strong>
