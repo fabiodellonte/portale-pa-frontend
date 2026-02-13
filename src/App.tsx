@@ -16,6 +16,7 @@ type Segnalazione = {
   id?: string; codice?: string; titolo?: string; descrizione?: string; stato?: string;
   created_by?: string; reported_by?: string; user_id?: string; author_id?: string;
   votes_count?: number; supporti?: number; updated_at?: string;
+  priorita?: string; severita?: string; address?: string; tags?: string[];
   timeline?: Array<{ id?: string; message?: string; event_type?: string; created_at?: string }>;
 };
 
@@ -73,9 +74,12 @@ export default function App() {
   const [publicDocs, setPublicDocs] = useState<{ global: Doc[]; tenant: Doc[] }>({ global: [], tenant: [] });
 
   const [activeScreen, setActiveScreen] = useState<Screen>('login');
-  const [featuredItems, setFeaturedItems] = useState<Array<{ title: string; text: string; badge: string }>>([]);
-  const [myReports, setMyReports] = useState<Array<{ id: string; titolo: string; stato: string; supporti: number }>>([]);
+  const [featuredItems, setFeaturedItems] = useState<Array<{ id: string; title: string; text: string; badge: string; priority: string; area: string }>>([]);
+  const [myReports, setMyReports] = useState<Array<{ id: string; titolo: string; stato: string; supporti: number; priorita: string; area: string }>>([]);
+  const [homeSegnalazioni, setHomeSegnalazioni] = useState<Segnalazione[]>([]);
   const [homeError, setHomeError] = useState('');
+  const [isAiAssistantOpen, setIsAiAssistantOpen] = useState(false);
+  const [aiAssistantInput, setAiAssistantInput] = useState('');
 
   const [wizardStep, setWizardStep] = useState<WizardStep>(1);
   const [wizardTitle, setWizardTitle] = useState('');
@@ -136,6 +140,26 @@ export default function App() {
 
   const unreadNotifications = notifications.filter((item) => item.unread).length;
 
+  const aiInsights = useMemo(() => {
+    const highPriority = homeSegnalazioni.filter((item) => (item.priorita ?? '').toLowerCase() === 'alta' || (item.severita ?? '').toLowerCase() === 'alta');
+    const waiting = homeSegnalazioni.filter((item) => (item.stato ?? '').toLowerCase() === 'in_attesa');
+    const topSupported = [...priorityItems].sort((a, b) => b.supporti - a.supporti)[0];
+
+    return [
+      highPriority[0] ? `Priorità alta: "${highPriority[0].titolo}" in ${highPriority[0].address ?? 'area non specificata'}.` : '',
+      waiting.length > 0 ? `${waiting.length} segnalazioni sono ancora in attesa di presa in carico.` : '',
+      topSupported ? `Trend civico: "${topSupported.titolo}" è la priorità con più supporti (${topSupported.supporti}).` : ''
+    ].filter(Boolean);
+  }, [homeSegnalazioni, priorityItems]);
+
+  const aiAssistantMessages = useMemo(() => {
+    const base = ['Buongiorno, sono l’assistente operativo del Portale PA.'];
+    if (aiAssistantInput.trim().length >= 3) {
+      return [...base, `Ho analizzato "${aiAssistantInput.trim()}".`, ...(aiInsights.length > 0 ? aiInsights : ['Nessun insight disponibile al momento.'])];
+    }
+    return [...base, ...(aiInsights.length > 0 ? aiInsights : ['Posso aiutarti su priorità, stato segnalazioni e prossime azioni.'])];
+  }, [aiAssistantInput, aiInsights]);
+
   const screenTitle = useMemo(() => ({
     home: 'Home', wizard: 'Nuova segnalazione', priorita: 'Priorità', dettaglio: 'Dettaglio', profilo: 'Profilo', notifiche: 'Notifiche', docs: 'Documentazione pubblica'
   } as Record<Exclude<Screen, 'login'>, string>), []);
@@ -166,13 +190,15 @@ export default function App() {
       try {
         const segnalazioniRes = await api.get('/v1/segnalazioni', { headers, params: { tenant_id: tenantId, page: 1, page_size: 50, sort: 'updated_at.desc' } });
         const all = (segnalazioniRes.data?.items ?? []) as Segnalazione[];
-        setFeaturedItems(all.slice(0, 3).map((i) => ({ title: i.titolo ?? 'Segnalazione', text: `Stato: ${statoLabel(i.stato)}`, badge: statoLabel(i.stato) })));
-        setMyReports(all.filter((i) => i.created_by === userId || i.reported_by === userId || i.user_id === userId || i.author_id === userId).map((i) => ({ id: i.id ?? i.codice ?? 'SGN', titolo: i.titolo ?? 'Segnalazione', stato: statoLabel(i.stato), supporti: i.votes_count ?? i.supporti ?? 0 })));
+        setHomeSegnalazioni(all);
+        setFeaturedItems(all.slice(0, 3).map((i) => ({ id: i.id ?? i.codice ?? 'SGN', title: i.titolo ?? 'Segnalazione', text: `Stato: ${statoLabel(i.stato)} • Severità: ${i.severita ?? 'media'}`, badge: statoLabel(i.stato), priority: (i.priorita ?? 'media').toUpperCase(), area: i.address ?? 'Area non specificata' })));
+        setMyReports(all.filter((i) => i.created_by === userId || i.reported_by === userId || i.user_id === userId || i.author_id === userId).map((i) => ({ id: i.codice ?? i.id ?? 'SGN', titolo: i.titolo ?? 'Segnalazione', stato: statoLabel(i.stato), supporti: i.votes_count ?? i.supporti ?? 0, priorita: (i.priorita ?? 'media').toUpperCase(), area: i.address ?? 'Area non specificata' })));
         setHomeError('');
       } catch {
         setHomeError('Al momento non è possibile caricare i dati aggiornati. Riprova più tardi.');
         setFeaturedItems([]);
         setMyReports([]);
+        setHomeSegnalazioni([]);
       }
     })();
   }, [headers, tenantId, userId]);
@@ -368,7 +394,10 @@ export default function App() {
         event.preventDefault();
         setIsSearchOpen(true);
       }
-      if (event.key === 'Escape') setIsSearchOpen(false);
+      if (event.key === 'Escape') {
+        setIsSearchOpen(false);
+        setIsAiAssistantOpen(false);
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -414,7 +443,7 @@ export default function App() {
 
       {activeScreen === 'login' && <Card className="screen institutional-login"><p className="eyebrow">Portale Istituzionale Segnalazioni</p><h1>Accedi con identità digitale</h1><p className="muted">Servizio comunale per segnalazioni, priorità e aggiornamenti sul territorio.</p><div className="spid-card"><strong>SPID / CIE</strong><p>Autenticazione sicura per cittadini e operatori.</p><Button type="button" variant="primary" onClick={() => setActiveScreen('home')}>Entra con SPID</Button></div></Card>}
 
-      {activeScreen === 'home' && <section className="screen home-screen"><Card as="article"><h3>In evidenza</h3>{homeError && <p className="muted">{homeError}</p>}<div className="horizontal-list">{featuredItems.map((i) => <div key={i.title} className="feature-card"><Badge>{i.badge}</Badge><strong>{i.title}</strong><p>{i.text}</p></div>)}</div><Button type="button" variant="primary" onClick={openWizard}>Crea segnalazione</Button></Card><Card as="article"><h3>Le mie segnalazioni</h3><ul className="plain-list">{myReports.map((r) => <li key={r.id}><div><strong>{r.titolo}</strong><p>{r.id} • {r.stato}</p></div><small>{r.supporti} supporti</small></li>)}</ul></Card><Card as="article"><h3>Documentazione pubblica</h3><ul className="plain-list docs-list">{[...(publicDocs.global ?? []), ...(publicDocs.tenant ?? [])].map((d) => <li key={d.slug}>{d.title}</li>)}</ul></Card></section>}
+      {activeScreen === 'home' && <section className="screen home-screen"><Card as="article"><h3>In evidenza</h3>{homeError && <p className="muted">{homeError}</p>}<div className="horizontal-list">{featuredItems.map((i) => <div key={i.id} className="feature-card"><Badge>{i.badge}</Badge><strong>{i.title}</strong><p>{i.text}</p><p className="muted">Priorità {i.priority} • {i.area}</p></div>)}</div><div className="inline-actions"><Button type="button" variant="primary" onClick={openWizard}>Crea segnalazione</Button><Button type="button" onClick={() => setIsAiAssistantOpen(true)}>Apri Assistente AI</Button></div></Card><Card as="article" className="ai-insight-card" testId="ai-insight-card"><div className="dev-profile-switcher__header"><h3>AI Insight</h3><Badge tone="warning">AUTO</Badge></div><p className="muted">Suggerimenti automatici basati su priorità e segnalazioni correnti.</p><ul className="plain-list docs-list">{aiInsights.map((item) => <li key={item}>{item}</li>)}</ul>{aiInsights.length === 0 && <p className="muted">Nessun insight disponibile al momento.</p>}</Card><Card as="article"><h3>Le mie segnalazioni</h3><ul className="plain-list">{myReports.map((r) => <li key={r.id}><div><strong>{r.titolo}</strong><p>{r.id} • {r.stato}</p><p>Priorità {r.priorita} • {r.area}</p></div><small>{r.supporti} supporti</small></li>)}</ul></Card><Card as="article"><h3>Documentazione pubblica</h3><ul className="plain-list docs-list">{[...(publicDocs.global ?? []), ...(publicDocs.tenant ?? [])].map((d) => <li key={d.slug}>{d.title}</li>)}</ul></Card></section>}
 
       {activeScreen === 'notifiche' && (
         <section className="screen" data-testid="notifications-screen">
@@ -498,6 +527,22 @@ export default function App() {
       {activeScreen === 'priorita' && <Card className="screen priority-shell" testId="priority-shell"><header className="priority-head"><div><p className="eyebrow">Classifica segnalazioni</p><h2>Priorità del territorio</h2></div><Badge>{priorityItems.length} elementi</Badge></header><div className="chips" aria-label="Categorie priorità">{Array.from(new Set(priorityItems.map((p) => p.categoria))).slice(0, 6).map((cat) => <Chip key={cat}>{cat}</Chip>)}</div><ul className="plain-list priority-list">{priorityItems.map((p) => <li key={p.id} className="priority-item"><div><strong>{p.titolo}</strong><p>{p.categoria} • Trend {p.trend}</p></div><Button type="button" onClick={() => toggleSupport(p.id)}>Supporta ({p.supporti})</Button></li>)}</ul>{priorityItems.length === 0 && <p className="muted">Nessuna priorità disponibile al momento.</p>}</Card>}
 
       {activeScreen === 'dettaglio' && <section className="screen detail-screen" data-testid="detail-screen"><Card as="article" className="detail-hero"><p className="eyebrow">Dettaglio segnalazione</p>{detail ? <><h2>{detail.codice ?? detail.id} • {detail.titolo ?? 'Segnalazione inviata'}</h2><p className="success-text">Segnalazione registrata con successo. Conserva il codice pubblico per il monitoraggio.</p>{detail.timeline && detail.timeline.length > 0 && <ol className="timeline" aria-label="Timeline stato">{detail.timeline.map((t, i) => <li key={t.id ?? i}><strong>{t.message ?? t.event_type ?? 'Aggiornamento'}</strong><span>{t.created_at ? new Date(t.created_at).toLocaleString('it-IT') : 'Ora non disponibile'}</span></li>)}</ol>}</> : <h2>Nessuna segnalazione disponibile per il dettaglio.</h2>}</Card><Card as="article" className="detail-content"><h3>Descrizione</h3><p>{detail?.descrizione ?? 'Nessun contenuto disponibile.'}</p></Card></section>}
+
+      {isAiAssistantOpen && (
+        <div className="search-overlay" role="dialog" aria-modal="true" aria-label="Assistente AI">
+          <Card as="section" className="search-modal ai-assistant-modal">
+            <div className="dev-profile-switcher__header">
+              <h3>Assistente AI Portale PA</h3>
+              <Button type="button" onClick={() => { setIsAiAssistantOpen(false); setAiAssistantInput(''); }}>Chiudi</Button>
+            </div>
+            <p className="muted">Chat operativa con suggerimenti contestuali dal dataset corrente.</p>
+            <Input aria-label="Prompt assistente AI" placeholder="Es. Cosa richiede intervento urgente oggi?" value={aiAssistantInput} onChange={(e) => setAiAssistantInput(e.target.value)} />
+            <div className="ai-chat-log" aria-label="Messaggi assistente AI">
+              {aiAssistantMessages.map((message) => <p key={message} className="ai-chat-bubble">{message}</p>)}
+            </div>
+          </Card>
+        </div>
+      )}
 
       {isSearchOpen && (
         <div className="search-overlay" role="dialog" aria-modal="true" aria-label="Ricerca segnalazioni">

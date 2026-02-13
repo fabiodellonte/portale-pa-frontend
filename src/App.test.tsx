@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -39,7 +39,7 @@ function primeAccess() {
     if (url === '/v1/me/tenant-label') return Promise.resolve({ data: { tenant_name: 'Pesaro' } });
     if (url.includes('/branding')) return Promise.resolve({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } });
     if (url === '/v1/docs/public') return Promise.resolve({ data: { global: [{ slug: 'guida', title: 'Guida cittadino' }], tenant: [{ slug: 'regole', title: 'Regole comunali' }] } });
-    if (url === '/v1/segnalazioni') return Promise.resolve({ data: { items: [{ id: 's1', titolo: 'Buca via Roma', stato: 'in_attesa', descrizione: 'Test', created_by: userId }] } });
+    if (url === '/v1/segnalazioni') return Promise.resolve({ data: { items: [{ id: 's1', codice: 'SGN-001', titolo: 'Buca via Roma', stato: 'in_attesa', descrizione: 'Test', priorita: 'alta', severita: 'alta', address: 'Via Roma 24', created_by: userId }, { id: 's2', codice: 'SGN-002', titolo: 'Lampione spento', stato: 'presa_in_carico', descrizione: 'Test 2', priorita: 'media', severita: 'media', address: 'Piazza Municipio 1', created_by: userId }] } });
     if (url === '/v1/segnalazioni/priorities') return Promise.resolve({ data: { items: [{ id: 's1', titolo: 'Buca via Roma', categoria: 'Viabilità', trend: '+12%', supporti: 3 }] } });
     if (url === '/v1/admin/demo-mode') return Promise.resolve({ data: { state: demoModeState, output: `status ${demoModeState}` } });
     if (url === '/v1/notifications') {
@@ -92,6 +92,21 @@ describe('Portale PA UX refinements', () => {
     expect(await screen.findByTestId('public-docs-screen')).toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Elenco documentazione pubblica' })).toBeInTheDocument();
     expect(screen.getByText('Guida cittadino')).toBeInTheDocument();
+  });
+
+  it('shows AI Insight card and opens AI assistant modal from home CTA', async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+
+    const insightCard = await screen.findByTestId('ai-insight-card');
+    expect(insightCard).toBeInTheDocument();
+    expect(within(insightCard).getByText(/Priorità alta/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Apri Assistente AI' }));
+    expect(await screen.findByRole('dialog', { name: 'Assistente AI' })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Prompt assistente AI'), 'priorità urgenti');
+    expect(screen.getByText(/Ho analizzato "priorità urgenti"/i)).toBeInTheDocument();
   });
 
   it('keeps profile IA sections, admin-only gating, and full demo seed action feedback', async () => {
