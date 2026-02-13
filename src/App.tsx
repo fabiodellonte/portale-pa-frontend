@@ -21,6 +21,7 @@ type Segnalazione = {
 
 type PriorityItem = { id: string; titolo: string; categoria: string; trend: string; supporti: number };
 type DemoModeState = 'on' | 'off' | 'unknown';
+type DemoSeedState = 'idle' | 'loading' | 'success' | 'error';
 type AssistedTag = { id: string; slug: string; label: string };
 type AssistedAddress = { id: string; address: string; reference_code: string; lat: number; lng: number };
 type AddressValidation = {
@@ -32,7 +33,7 @@ type NotificationKind = 'status' | 'update' | 'assignment';
 type AppNotification = { id: string; kind: NotificationKind; title: string; body: string; timestamp: string; unread: boolean };
 type NotificationLoadState = 'idle' | 'loading' | 'ready' | 'fallback' | 'error';
 
-type Screen = 'login' | 'home' | 'wizard' | 'priorita' | 'dettaglio' | 'profilo' | 'notifiche';
+type Screen = 'login' | 'home' | 'wizard' | 'priorita' | 'dettaglio' | 'profilo' | 'notifiche' | 'docs';
 type WizardStep = 1 | 2 | 3;
 type DevProfileKey = 'citizen_demo' | 'maintainer_demo' | 'admin_demo';
 type DevProfile = { key: DevProfileKey; label: string; userId: string; tenantId: string };
@@ -51,6 +52,14 @@ function statoLabel(stato?: string) {
 }
 function getSearchString(v: string) {
   return v.toLowerCase().replace(/[^a-z0-9àèéìòù\s]/gi, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 4).join(' ');
+}
+
+function TopbarIcon({ path }: { path: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="topbar-icon" focusable="false">
+      <path d={path} />
+    </svg>
+  );
 }
 
 export default function App() {
@@ -97,6 +106,9 @@ export default function App() {
   const [demoModeOutput, setDemoModeOutput] = useState('');
   const [demoModeBusy, setDemoModeBusy] = useState(false);
   const [demoModeFeedback, setDemoModeFeedback] = useState('');
+  const [tenantName, setTenantName] = useState('Ente');
+  const [demoSeedState, setDemoSeedState] = useState<DemoSeedState>('idle');
+  const [demoSeedFeedback, setDemoSeedFeedback] = useState('');
 
   const headers = useMemo(() => ({ 'x-user-id': userId, 'x-tenant-id': tenantId }), [tenantId, userId]);
   const isAdmin = (access?.portal_roles ?? []).includes('admin') || access?.portal_role === 'admin';
@@ -125,23 +137,26 @@ export default function App() {
   const unreadNotifications = notifications.filter((item) => item.unread).length;
 
   const screenTitle = useMemo(() => ({
-    home: 'Home', wizard: 'Nuova segnalazione', priorita: 'Priorità', dettaglio: 'Dettaglio', profilo: 'Profilo', notifiche: 'Notifiche'
+    home: 'Home', wizard: 'Nuova segnalazione', priorita: 'Priorità', dettaglio: 'Dettaglio', profilo: 'Profilo', notifiche: 'Notifiche', docs: 'Documentazione pubblica'
   } as Record<Exclude<Screen, 'login'>, string>), []);
 
   useEffect(() => {
     void (async () => {
       try {
-        const [, acc, brand, docs] = await Promise.all([
+        const [, acc, brand, docs, tenantLabel] = await Promise.all([
           api.get('/v1/me/preferences', { headers }),
           api.get('/v1/me/access', { headers }),
           api.get(`/v1/tenants/${tenantId}/branding`, { headers }).catch(() => ({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } })),
-          api.get('/v1/docs/public', { headers })
+          api.get('/v1/docs/public', { headers }),
+          api.get('/v1/me/tenant-label', { headers }).catch(() => ({ data: { tenant_name: 'Ente' } }))
         ]);
         setAccess(acc.data ?? {});
         setBranding(brand.data);
         setPublicDocs(docs.data ?? { global: [], tenant: [] });
+        setTenantName(String(tenantLabel.data?.tenant_name ?? 'Ente'));
       } catch {
         setPublicDocs({ global: [], tenant: [] });
+        setTenantName('Ente');
       }
     })();
   }, [headers, tenantId, userId]);
@@ -334,6 +349,19 @@ export default function App() {
     }
   };
 
+  const loadFullDemoData = async () => {
+    setDemoSeedState('loading');
+    setDemoSeedFeedback('Caricamento dataset demo completo in corso...');
+    try {
+      const res = await api.post('/v1/admin/demo-seed/full', {}, { headers });
+      setDemoSeedState('success');
+      setDemoSeedFeedback(String(res.data?.message ?? 'Dataset demo completo caricato con successo.'));
+    } catch {
+      setDemoSeedState('error');
+      setDemoSeedFeedback('Caricamento dati demo non riuscito. Verifica flag backend e permessi admin.');
+    }
+  };
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
@@ -371,11 +399,15 @@ export default function App() {
     <main className="app-shell mobile-shell">
       {nonLoginScreen && (
         <header className="app-topbar" aria-label="Barra superiore">
-          <h1>{screenTitle[activeScreen as Exclude<Screen, 'login'>]}</h1>
+          <div>
+            <p className="eyebrow topbar-eyebrow">{screenTitle[activeScreen as Exclude<Screen, 'login'>]}</p>
+            <h1 className="topbar-brand">Città di {tenantName}</h1>
+          </div>
           <div className="app-topbar__actions">
-            <button type="button" aria-label="Cerca" className="icon-btn" onClick={() => setIsSearchOpen(true)}>🔎</button>
-            <button type="button" aria-label="Notifiche" className="icon-btn" onClick={() => setActiveScreen('notifiche')}>🔔{unreadNotifications > 0 && <span className="icon-badge">{Math.min(unreadNotifications, 9)}</span>}</button>
-            <button type="button" aria-label="Profilo" className="icon-btn" onClick={() => setActiveScreen('profilo')}>👤</button>
+            <button type="button" aria-label="Cerca" className="icon-btn" onClick={() => setIsSearchOpen(true)}><TopbarIcon path="M11 4a7 7 0 1 0 4.95 11.95l4.05 4.05 1.4-1.4-4.05-4.05A7 7 0 0 0 11 4Z" /></button>
+            <button type="button" aria-label="Documentazione pubblica" className="icon-btn" onClick={() => setActiveScreen('docs')}><TopbarIcon path="M6 4h9l3 3v13H6z M15 4v4h4 M9 11h6 M9 15h6" /></button>
+            <button type="button" aria-label="Notifiche" className="icon-btn" onClick={() => setActiveScreen('notifiche')}><TopbarIcon path="M12 4a4 4 0 0 0-4 4v2.5c0 .9-.3 1.8-.9 2.5L6 14.5h12L16.9 13c-.6-.7-.9-1.6-.9-2.5V8a4 4 0 0 0-4-4ZM10 18a2 2 0 0 0 4 0" />{unreadNotifications > 0 && <span className="icon-badge">{Math.min(unreadNotifications, 9)}</span>}</button>
+            <button type="button" aria-label="Profilo" className="icon-btn" onClick={() => setActiveScreen('profilo')}><TopbarIcon path="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-3.3 0-6 2.2-6 5h12c0-2.8-2.7-5-6-5Z" /></button>
           </div>
         </header>
       )}
@@ -408,6 +440,18 @@ export default function App() {
         </section>
       )}
 
+      {activeScreen === 'docs' && (
+        <section className="screen" data-testid="public-docs-screen">
+          <Card as="article">
+            <h3>Documentazione pubblica</h3>
+            <p className="muted">Contenuti informativi disponibili pubblicamente per cittadini e operatori.</p>
+            <ul className="plain-list docs-list" aria-label="Elenco documentazione pubblica">
+              {[...(publicDocs.global ?? []), ...(publicDocs.tenant ?? [])].map((d) => <li key={d.slug}>{d.title}</li>)}
+            </ul>
+          </Card>
+        </section>
+      )}
+
       {activeScreen === 'profilo' && (
         <section className="screen" data-testid="profile-screen">
           <Card as="article">
@@ -430,7 +474,7 @@ export default function App() {
             )}
             <div className="inline-actions"><Button type="button" onClick={() => setThemeMode((t) => t === 'light' ? 'dark' : 'light')}>Tema: {themeMode === 'light' ? 'Chiaro' : 'Scuro'}</Button></div>
             <p className="muted">Header API effettivi: x-user-id {userId} • x-tenant-id {tenantId}</p>
-            {isAdmin && <section className="demo-mode-panel" aria-label="Modalità Test DB"><h4>Modalità Test DB</h4><p className="muted warning-text">⚠️ Solo sviluppo locale. Non abilitare in produzione. Flag richiesto: ENABLE_DEMO_MODE_SWITCH=true.</p><p className="muted">Stato corrente: <strong>{demoModeState === 'on' ? 'ON' : demoModeState === 'off' ? 'OFF' : 'SCONOSCIUTO'}</strong></p><div className="inline-actions"><Button type="button" onClick={() => switchDemoMode('on')} disabled={demoModeBusy}>ON</Button><Button type="button" onClick={() => switchDemoMode('off')} disabled={demoModeBusy}>OFF</Button></div>{demoModeFeedback && <p className="success-text">{demoModeFeedback}</p>}{demoModeOutput && <p className="muted demo-mode-output">{demoModeOutput}</p>}</section>}
+            {isAdmin && <section className="demo-mode-panel" aria-label="Modalità Test DB"><h4>Modalità Test DB</h4><p className="muted warning-text">⚠️ Solo sviluppo locale. Non abilitare in produzione. Flag richiesto: ENABLE_DEMO_MODE_SWITCH=true.</p><p className="muted">Stato corrente: <strong>{demoModeState === 'on' ? 'ON' : demoModeState === 'off' ? 'OFF' : 'SCONOSCIUTO'}</strong></p><div className="inline-actions"><Button type="button" onClick={() => switchDemoMode('on')} disabled={demoModeBusy || demoSeedState === 'loading'}>ON</Button><Button type="button" onClick={() => switchDemoMode('off')} disabled={demoModeBusy || demoSeedState === 'loading'}>OFF</Button><Button type="button" onClick={() => void loadFullDemoData()} disabled={demoModeBusy || demoSeedState === 'loading'}>{demoSeedState === 'loading' ? 'Caricamento...' : 'Carica dati demo completi'}</Button></div>{demoModeFeedback && <p className="success-text">{demoModeFeedback}</p>}{demoSeedFeedback && <p className={demoSeedState === 'error' ? 'error-text' : 'success-text'}>{demoSeedFeedback}</p>}{demoModeOutput && <p className="muted demo-mode-output">{demoModeOutput}</p>}</section>}
           </Card>
         </section>
       )}

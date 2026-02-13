@@ -27,6 +27,7 @@ const accessByUser: Record<string, { portal_role: 'citizen' | 'maintainer' | 'ad
 
 let demoModeState: 'on' | 'off' | 'unknown' = 'off';
 let notificationsShouldFail = false;
+let demoSeedShouldFail = false;
 
 function primeAccess() {
   getMock.mockImplementation((url: string, config?: { headers?: Record<string, string> }) => {
@@ -35,8 +36,9 @@ function primeAccess() {
 
     if (url === '/v1/me/preferences') return Promise.resolve({ data: { language: 'it' } });
     if (url === '/v1/me/access') return Promise.resolve({ data: { user_id: userId, tenant_id: tenantId, ...(accessByUser[userId] ?? accessByUser['00000000-0000-0000-0000-000000000111']) } });
+    if (url === '/v1/me/tenant-label') return Promise.resolve({ data: { tenant_name: 'Pesaro' } });
     if (url.includes('/branding')) return Promise.resolve({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } });
-    if (url === '/v1/docs/public') return Promise.resolve({ data: { global: [{ slug: 'guida', title: 'Guida cittadino' }], tenant: [] } });
+    if (url === '/v1/docs/public') return Promise.resolve({ data: { global: [{ slug: 'guida', title: 'Guida cittadino' }], tenant: [{ slug: 'regole', title: 'Regole comunali' }] } });
     if (url === '/v1/segnalazioni') return Promise.resolve({ data: { items: [{ id: 's1', titolo: 'Buca via Roma', stato: 'in_attesa', descrizione: 'Test', created_by: userId }] } });
     if (url === '/v1/segnalazioni/priorities') return Promise.resolve({ data: { items: [{ id: 's1', titolo: 'Buca via Roma', categoria: 'Viabilità', trend: '+12%', supporti: 3 }] } });
     if (url === '/v1/admin/demo-mode') return Promise.resolve({ data: { state: demoModeState, output: `status ${demoModeState}` } });
@@ -55,11 +57,16 @@ describe('Portale PA UX refinements', () => {
     postMock.mockReset();
     demoModeState = 'off';
     notificationsShouldFail = false;
+    demoSeedShouldFail = false;
 
     postMock.mockImplementation((url: string, payload?: { mode?: 'on' | 'off' }) => {
       if (url === '/v1/admin/demo-mode') {
         demoModeState = payload?.mode ?? demoModeState;
         return Promise.resolve({ data: { state: demoModeState, status_output: `status ${demoModeState}` } });
+      }
+      if (url === '/v1/admin/demo-seed/full') {
+        if (demoSeedShouldFail) return Promise.reject(new Error('seed disabled'));
+        return Promise.resolve({ data: { ok: true, message: 'Dataset demo completo caricato con successo.' } });
       }
       return Promise.resolve({ data: {} });
     });
@@ -67,40 +74,54 @@ describe('Portale PA UX refinements', () => {
     primeAccess();
   });
 
-  it('renders notifications from API feed', async () => {
+  it('shows tenant branding title and top icons with white outline style hooks', async () => {
     render(<App />);
     await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
-    await userEvent.click(screen.getByLabelText('Notifiche'));
 
-    expect(await screen.findByTestId('notifications-screen')).toBeInTheDocument();
-    expect(screen.getByText('Aggiornamento segnalazione s1')).toBeInTheDocument();
-    expect(screen.queryByText(/temporaneamente non disponibile/i)).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Città di Pesaro' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Documentazione pubblica')).toHaveClass('icon-btn');
+    expect(screen.getByLabelText('Notifiche')).toHaveClass('icon-btn');
+    expect(screen.getByLabelText('Profilo')).toHaveClass('icon-btn');
   });
 
-  it('uses deterministic notifications fallback only when API is unavailable', async () => {
-    notificationsShouldFail = true;
-    primeAccess();
-
+  it('opens public docs panel from topbar icon', async () => {
     render(<App />);
     await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
-    await userEvent.click(screen.getByLabelText('Notifiche'));
+    await userEvent.click(screen.getByLabelText('Documentazione pubblica'));
 
-    expect(await screen.findByText(/Feed live temporaneamente non disponibile/i)).toBeInTheDocument();
-    expect(screen.getByText(/Aggiornamento segnalazione/i)).toBeInTheDocument();
+    expect(await screen.findByTestId('public-docs-screen')).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Elenco documentazione pubblica' })).toBeInTheDocument();
+    expect(screen.getByText('Guida cittadino')).toBeInTheDocument();
   });
 
-  it('keeps profile IA sections and admin-only gating', async () => {
+  it('keeps profile IA sections, admin-only gating, and full demo seed action feedback', async () => {
     render(<App />);
     await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
     await userEvent.click(screen.getByLabelText('Profilo'));
 
     expect(await screen.findByRole('heading', { name: 'Account' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Accessi' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Modalità test' })).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Modalità Test DB' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Carica dati demo completi' })).not.toBeInTheDocument();
 
     await userEvent.selectOptions(screen.getByLabelText('Profilo sviluppo'), 'admin_demo');
     expect(await screen.findByRole('region', { name: 'Modalità Test DB' })).toBeInTheDocument();
+
+    const button = screen.getByRole('button', { name: 'Carica dati demo completi' });
+    await userEvent.click(button);
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/v1/admin/demo-seed/full', {}, expect.any(Object)));
+    expect(await screen.findByText(/Dataset demo completo caricato con successo/i)).toBeInTheDocument();
+  });
+
+  it('shows error feedback when full demo seed action fails', async () => {
+    demoSeedShouldFail = true;
+    render(<App />);
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    await userEvent.click(screen.getByLabelText('Profilo'));
+    await userEvent.selectOptions(screen.getByLabelText('Profilo sviluppo'), 'admin_demo');
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Carica dati demo completi' }));
+    expect(await screen.findByText(/Caricamento dati demo non riuscito/i)).toBeInTheDocument();
   });
 
   it('opens and closes segnalazioni search modal and renders results list', async () => {
