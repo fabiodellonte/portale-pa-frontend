@@ -74,19 +74,24 @@ describe('Portale PA UX refinements', () => {
     primeAccess();
   });
 
-  it('shows tenant branding title and top icons with white outline style hooks', async () => {
+  it('shows tenant branding title and top-right public docs icon near profile with outlined info style', async () => {
     render(<App />);
     await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
 
     expect(await screen.findByRole('heading', { name: 'Città di Pesaro' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Documentazione pubblica')).toHaveClass('icon-btn');
+    const docsButton = screen.getByLabelText('Documentazione pubblica');
+    expect(docsButton).toHaveClass('icon-btn');
+    expect(docsButton.querySelector('svg')).toHaveClass('topbar-icon--info');
     expect(screen.getByLabelText('Notifiche')).toHaveClass('icon-btn');
     expect(screen.getByLabelText('Profilo')).toHaveClass('icon-btn');
   });
 
-  it('opens public docs panel from topbar icon', async () => {
+  it('opens public docs panel from dedicated topbar icon and removes redundant home docs entry point', async () => {
     render(<App />);
     await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+
+    expect(screen.queryByRole('heading', { name: 'Documentazione pubblica' })).not.toBeInTheDocument();
+
     await userEvent.click(screen.getByLabelText('Documentazione pubblica'));
 
     expect(await screen.findByTestId('public-docs-screen')).toBeInTheDocument();
