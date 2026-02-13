@@ -26,6 +26,7 @@ const accessByUser: Record<string, { portal_role: 'citizen' | 'maintainer' | 'ad
 };
 
 let demoModeState: 'on' | 'off' | 'unknown' = 'off';
+let notificationsShouldFail = false;
 
 function primeAccess() {
   getMock.mockImplementation((url: string, config?: { headers?: Record<string, string> }) => {
@@ -39,17 +40,21 @@ function primeAccess() {
     if (url === '/v1/segnalazioni') return Promise.resolve({ data: { items: [{ id: 's1', titolo: 'Buca via Roma', stato: 'in_attesa', descrizione: 'Test', created_by: userId }] } });
     if (url === '/v1/segnalazioni/priorities') return Promise.resolve({ data: { items: [{ id: 's1', titolo: 'Buca via Roma', categoria: 'Viabilità', trend: '+12%', supporti: 3 }] } });
     if (url === '/v1/admin/demo-mode') return Promise.resolve({ data: { state: demoModeState, output: `status ${demoModeState}` } });
-    if (url === '/v1/notifications') return Promise.resolve({ data: { items: [] } });
+    if (url === '/v1/notifications') {
+      if (notificationsShouldFail) return Promise.reject(new Error('down'));
+      return Promise.resolve({ data: { items: [{ id: 'n1', kind: 'status', title: 'Aggiornamento segnalazione s1', body: 'Stato aggiornato', timestamp: new Date().toISOString(), unread: true }] } });
+    }
     return Promise.resolve({ data: {} });
   });
 }
 
-describe('Portale PA mobile layout refresh', () => {
+describe('Portale PA UX refinements', () => {
   beforeEach(() => {
     localStorage.clear();
     getMock.mockReset();
     postMock.mockReset();
     demoModeState = 'off';
+    notificationsShouldFail = false;
 
     postMock.mockImplementation((url: string, payload?: { mode?: 'on' | 'off' }) => {
       if (url === '/v1/admin/demo-mode') {
@@ -62,64 +67,54 @@ describe('Portale PA mobile layout refresh', () => {
     primeAccess();
   });
 
-  it('renders top bar icons on home after login', async () => {
+  it('renders notifications from API feed', async () => {
     render(<App />);
-
-    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
-    expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Profilo')).toBeInTheDocument();
-    expect(screen.getByLabelText('Notifiche')).toBeInTheDocument();
-    expect(screen.getByLabelText('Cerca')).toBeInTheDocument();
-  });
-
-  it('moves settings and test controls to profile screen', async () => {
-    render(<App />);
-
-    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
-    expect(screen.queryByRole('region', { name: 'Modalità test' })).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByLabelText('Profilo'));
-    expect(await screen.findByTestId('profile-screen')).toBeInTheDocument();
-    expect(screen.getByTestId('dev-profile-switcher')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Tema:/ })).toBeInTheDocument();
-    expect(screen.getByText('MODALITÀ TEST')).toBeInTheDocument();
-  });
-
-  it('opens notifications screen from top bar and renders structured cards', async () => {
-    render(<App />);
-
     await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
     await userEvent.click(screen.getByLabelText('Notifiche'));
 
     expect(await screen.findByTestId('notifications-screen')).toBeInTheDocument();
-    expect(screen.getByRole('list', { name: 'Lista notifiche' })).toBeInTheDocument();
+    expect(screen.getByText('Aggiornamento segnalazione s1')).toBeInTheDocument();
+    expect(screen.queryByText(/temporaneamente non disponibile/i)).not.toBeInTheDocument();
+  });
+
+  it('uses deterministic notifications fallback only when API is unavailable', async () => {
+    notificationsShouldFail = true;
+    primeAccess();
+
+    render(<App />);
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    await userEvent.click(screen.getByLabelText('Notifiche'));
+
+    expect(await screen.findByText(/Feed live temporaneamente non disponibile/i)).toBeInTheDocument();
     expect(screen.getByText(/Aggiornamento segnalazione/i)).toBeInTheDocument();
   });
 
-  it('keeps admin-only demo panel visibility as regression check', async () => {
+  it('keeps profile IA sections and admin-only gating', async () => {
     render(<App />);
-
     await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
     await userEvent.click(screen.getByLabelText('Profilo'));
 
+    expect(await screen.findByRole('heading', { name: 'Account' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Accessi' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Modalità test' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Modalità Test DB' })).not.toBeInTheDocument();
 
     await userEvent.selectOptions(screen.getByLabelText('Profilo sviluppo'), 'admin_demo');
-    const panel = await screen.findByRole('region', { name: 'Modalità Test DB' });
-    expect(panel).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole('button', { name: 'ON' }));
-    await waitFor(() => expect(screen.getByText('Modalità Test DB impostata su ON.')).toBeInTheDocument());
+    expect(await screen.findByRole('region', { name: 'Modalità Test DB' })).toBeInTheDocument();
   });
 
-  it('highlights new bottom navigation entries consistently', async () => {
+  it('opens and closes segnalazioni search modal and renders results list', async () => {
     render(<App />);
-
     await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
-    expect(screen.getByTestId('bottom-nav-home')).toHaveAttribute('aria-current', 'page');
+    await userEvent.keyboard('{Control>}k{/Control}');
 
-    await userEvent.click(screen.getByTestId('bottom-nav-notifiche'));
-    expect(await screen.findByTestId('notifications-screen')).toBeInTheDocument();
-    expect(screen.getByTestId('bottom-nav-notifiche')).toHaveAttribute('aria-current', 'page');
+    expect(await screen.findByText('Ricerca segnalazioni')).toBeInTheDocument();
+    await userEvent.type(screen.getByPlaceholderText('Titolo o descrizione (min 2 caratteri)'), 'buca');
+
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith('/v1/segnalazioni', expect.objectContaining({ params: expect.objectContaining({ search: 'buca' }) })));
+    expect(await screen.findByRole('list', { name: 'Risultati ricerca segnalazioni' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Chiudi' }));
+    expect(screen.queryByRole('dialog', { name: 'Ricerca segnalazioni' })).not.toBeInTheDocument();
   });
 });

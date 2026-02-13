@@ -30,6 +30,7 @@ type AddressValidation = {
 
 type NotificationKind = 'status' | 'update' | 'assignment';
 type AppNotification = { id: string; kind: NotificationKind; title: string; body: string; timestamp: string; unread: boolean };
+type NotificationLoadState = 'idle' | 'loading' | 'ready' | 'fallback' | 'error';
 
 type Screen = 'login' | 'home' | 'wizard' | 'priorita' | 'dettaglio' | 'profilo' | 'notifiche';
 type WizardStep = 1 | 2 | 3;
@@ -86,6 +87,12 @@ export default function App() {
   const [priorityItems, setPriorityItems] = useState<PriorityItem[]>([]);
   const [detail, setDetail] = useState<Segnalazione | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notificationsState, setNotificationsState] = useState<NotificationLoadState>('idle');
+  const [notificationsMessage, setNotificationsMessage] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Segnalazione[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [demoModeState, setDemoModeState] = useState<DemoModeState>('unknown');
   const [demoModeOutput, setDemoModeOutput] = useState('');
   const [demoModeBusy, setDemoModeBusy] = useState(false);
@@ -223,23 +230,24 @@ export default function App() {
 
   useEffect(() => {
     void (async () => {
+      setNotificationsState('loading');
+      setNotificationsMessage('');
       try {
-        const res = await api.get('/v1/notifications', { headers, params: { tenant_id: tenantId, page: 1, page_size: 25 } });
+        const res = await api.get('/v1/notifications', { headers, params: { tenant_id: tenantId, user_id: userId, page: 1, page_size: 25 } });
         const items = (res.data?.items ?? []) as AppNotification[];
-        if (items.length > 0) {
-          setNotifications(items);
-          return;
-        }
-        throw new Error('no feed');
+        setNotifications(items);
+        setNotificationsState('ready');
       } catch {
         const fallback: AppNotification[] = [
           ...myReports.slice(0, 3).map((report, idx) => ({ id: `status-${report.id}`, kind: 'status' as const, title: `Aggiornamento segnalazione ${report.id}`, body: `${report.titolo} • stato ${report.stato}`, timestamp: new Date(Date.now() - idx * 3600000).toISOString(), unread: idx < 2 })),
           ...priorityItems.slice(0, 2).map((item, idx) => ({ id: `assignment-${item.id}`, kind: 'assignment' as const, title: `Priorità territoriale: ${item.categoria}`, body: `${item.titolo} ora con ${item.supporti} supporti.`, timestamp: new Date(Date.now() - (idx + 3) * 3600000).toISOString(), unread: false }))
         ];
         setNotifications(fallback);
+        setNotificationsState(fallback.length > 0 ? 'fallback' : 'error');
+        setNotificationsMessage('Feed live temporaneamente non disponibile. Visualizzazione dati locali.');
       }
     })();
-  }, [headers, myReports, priorityItems, tenantId]);
+  }, [headers, myReports, priorityItems, tenantId, userId]);
 
   const onDevProfileChange = (profileKey: DevProfileKey) => {
     const profile = devProfiles.find((item) => item.key === profileKey);
@@ -326,6 +334,37 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setIsSearchOpen(true);
+      }
+      if (event.key === 'Escape') setIsSearchOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (!isSearchOpen) return;
+    if (searchQuery.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    void (async () => {
+      setSearchLoading(true);
+      try {
+        const res = await api.get('/v1/segnalazioni', { headers, params: { tenant_id: tenantId, search: searchQuery.trim(), page: 1, page_size: 8, sort: 'updated_at.desc' } });
+        setSearchResults((res.data?.items ?? []) as Segnalazione[]);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    })();
+  }, [headers, isSearchOpen, searchQuery, tenantId]);
+
   const nonLoginScreen = activeScreen !== 'login';
 
   return (
@@ -334,7 +373,7 @@ export default function App() {
         <header className="app-topbar" aria-label="Barra superiore">
           <h1>{screenTitle[activeScreen as Exclude<Screen, 'login'>]}</h1>
           <div className="app-topbar__actions">
-            <button type="button" aria-label="Cerca" className="icon-btn" onClick={() => setActiveScreen('home')}>🔎</button>
+            <button type="button" aria-label="Cerca" className="icon-btn" onClick={() => setIsSearchOpen(true)}>🔎</button>
             <button type="button" aria-label="Notifiche" className="icon-btn" onClick={() => setActiveScreen('notifiche')}>🔔{unreadNotifications > 0 && <span className="icon-badge">{Math.min(unreadNotifications, 9)}</span>}</button>
             <button type="button" aria-label="Profilo" className="icon-btn" onClick={() => setActiveScreen('profilo')}>👤</button>
           </div>
@@ -349,7 +388,9 @@ export default function App() {
         <section className="screen" data-testid="notifications-screen">
           <Card as="article">
             <h3>Centro notifiche</h3>
-            <p className="muted">Feed strutturato pronto per integrazione backend.</p>
+            <p className="muted">Feed eventi segnalazioni (stato, aggiornamenti, assegnazioni).</p>
+            {notificationsState === 'loading' && <p className="muted">Caricamento notifiche...</p>}
+            {notificationsMessage && <p className="muted">{notificationsMessage}</p>}
             <ul className="plain-list notifications-list" aria-label="Lista notifiche">
               {notifications.map((notification) => (
                 <li key={notification.id} className={`notification-card notification-${notification.kind}`}>
@@ -362,7 +403,7 @@ export default function App() {
                 </li>
               ))}
             </ul>
-            {notifications.length === 0 && <p className="muted">Nessuna notifica disponibile.</p>}
+            {notifications.length === 0 && notificationsState !== 'loading' && <p className="muted">Nessuna notifica disponibile.</p>}
           </Card>
         </section>
       )}
@@ -370,12 +411,13 @@ export default function App() {
       {activeScreen === 'profilo' && (
         <section className="screen" data-testid="profile-screen">
           <Card as="article">
-            <h3>Profilo e impostazioni</h3>
+            <h3>Account</h3>
             <ul className="plain-list docs-list">
               <li><strong>User ID:</strong> {userId}</li>
               <li><strong>Tenant ID:</strong> {tenantId}</li>
               <li><strong>Ruolo:</strong> {(access?.portal_role ?? 'citizen').toUpperCase()}</li>
             </ul>
+            <h4>Accessi</h4>
             {userSettingsLinks.length > 0 ? <ul className="plain-list docs-list settings-links">{userSettingsLinks.map((link) => <li key={link.href}><a href={link.href}>{link.label}</a></li>)}</ul> : <p className="muted">Nessuna area amministrativa disponibile per il tuo profilo.</p>}
           </Card>
 
@@ -412,6 +454,25 @@ export default function App() {
       {activeScreen === 'priorita' && <Card className="screen priority-shell" testId="priority-shell"><header className="priority-head"><div><p className="eyebrow">Classifica segnalazioni</p><h2>Priorità del territorio</h2></div><Badge>{priorityItems.length} elementi</Badge></header><div className="chips" aria-label="Categorie priorità">{Array.from(new Set(priorityItems.map((p) => p.categoria))).slice(0, 6).map((cat) => <Chip key={cat}>{cat}</Chip>)}</div><ul className="plain-list priority-list">{priorityItems.map((p) => <li key={p.id} className="priority-item"><div><strong>{p.titolo}</strong><p>{p.categoria} • Trend {p.trend}</p></div><Button type="button" onClick={() => toggleSupport(p.id)}>Supporta ({p.supporti})</Button></li>)}</ul>{priorityItems.length === 0 && <p className="muted">Nessuna priorità disponibile al momento.</p>}</Card>}
 
       {activeScreen === 'dettaglio' && <section className="screen detail-screen" data-testid="detail-screen"><Card as="article" className="detail-hero"><p className="eyebrow">Dettaglio segnalazione</p>{detail ? <><h2>{detail.codice ?? detail.id} • {detail.titolo ?? 'Segnalazione inviata'}</h2><p className="success-text">Segnalazione registrata con successo. Conserva il codice pubblico per il monitoraggio.</p>{detail.timeline && detail.timeline.length > 0 && <ol className="timeline" aria-label="Timeline stato">{detail.timeline.map((t, i) => <li key={t.id ?? i}><strong>{t.message ?? t.event_type ?? 'Aggiornamento'}</strong><span>{t.created_at ? new Date(t.created_at).toLocaleString('it-IT') : 'Ora non disponibile'}</span></li>)}</ol>}</> : <h2>Nessuna segnalazione disponibile per il dettaglio.</h2>}</Card><Card as="article" className="detail-content"><h3>Descrizione</h3><p>{detail?.descrizione ?? 'Nessun contenuto disponibile.'}</p></Card></section>}
+
+      {isSearchOpen && (
+        <div className="search-overlay" role="dialog" aria-modal="true" aria-label="Ricerca segnalazioni">
+          <Card as="section" className="search-modal">
+            <div className="dev-profile-switcher__header">
+              <h3>Ricerca segnalazioni</h3>
+              <Button type="button" onClick={() => setIsSearchOpen(false)}>Chiudi</Button>
+            </div>
+            <Input aria-label="Ricerca segnalazioni" placeholder="Titolo o descrizione (min 2 caratteri)" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            {searchLoading && <p className="muted">Ricerca in corso...</p>}
+            {!searchLoading && searchQuery.trim().length >= 2 && (
+              <ul className="plain-list" aria-label="Risultati ricerca segnalazioni">
+                {searchResults.map((item) => <li key={item.id ?? item.codice}><div><strong>{item.titolo ?? 'Segnalazione'}</strong><p>{item.id ?? item.codice} • {statoLabel(item.stato)}</p></div></li>)}
+              </ul>
+            )}
+            {!searchLoading && searchQuery.trim().length >= 2 && searchResults.length === 0 && <p className="muted">Nessun risultato per questa ricerca.</p>}
+          </Card>
+        </div>
+      )}
 
       {activeScreen !== 'login' && <BottomNav
         activeKey={activeScreen}
