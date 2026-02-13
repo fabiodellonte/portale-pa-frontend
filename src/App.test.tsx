@@ -109,6 +109,34 @@ describe('Portale PA UX refinements', () => {
     expect(screen.getByText(/Ho analizzato "priorità urgenti"/i)).toBeInTheDocument();
   });
 
+  it('shows bug report form in profile settings', async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    await userEvent.click(screen.getByLabelText('Profilo'));
+
+    expect(await screen.findByRole('heading', { name: 'Segnala un bug' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Titolo bug report')).toBeInTheDocument();
+    expect(screen.getByLabelText('Descrizione bug report')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Invia bug report' })).toBeInTheDocument();
+  });
+
+  it('submits bug report from profile settings using existing endpoint', async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    await userEvent.click(screen.getByLabelText('Profilo'));
+
+    await userEvent.type(await screen.findByLabelText('Titolo bug report'), 'Errore salvataggio impostazioni');
+    await userEvent.type(screen.getByLabelText('Descrizione bug report'), 'Quando salvo le preferenze nel profilo compare un errore generico.');
+    await userEvent.click(screen.getByRole('button', { name: 'Invia bug report' }));
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/v1/bug-reports', expect.objectContaining({
+      title: 'Errore salvataggio impostazioni',
+      description: 'Quando salvo le preferenze nel profilo compare un errore generico.',
+      page_url: expect.any(String)
+    }), expect.any(Object)));
+    expect(await screen.findByText(/Bug report inviato correttamente/i)).toBeInTheDocument();
+  });
+
   it('keeps profile IA sections, admin-only gating, and full demo seed action feedback', async () => {
     render(<App />);
     await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
