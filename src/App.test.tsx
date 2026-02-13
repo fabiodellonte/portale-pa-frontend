@@ -61,14 +61,14 @@ describe('Portale PA mobile dettaglio', () => {
     expect(screen.getByRole('navigation', { name: 'Navigazione mobile' })).toBeInTheDocument();
   });
 
-  it('keeps dev profile switcher hidden by default', async () => {
+  it('shows dev profile switcher by default with explicit test-mode label', async () => {
     render(<App />);
-    expect(screen.queryByTestId('dev-profile-switcher')).not.toBeInTheDocument();
+    expect(screen.getByTestId('dev-profile-switcher')).toBeInTheDocument();
+    expect(screen.getByText('MODALITÀ TEST')).toBeInTheDocument();
     await waitFor(() => expect(getMock).toHaveBeenCalled());
   });
 
   it('switches demo profile and uses selected headers for /v1/me/access', async () => {
-    vi.stubEnv('VITE_DEV_PROFILE_SWITCH', 'true');
     render(<App />);
 
     const profileSelect = await screen.findByLabelText('Profilo sviluppo');
@@ -85,7 +85,6 @@ describe('Portale PA mobile dettaglio', () => {
   });
 
   it('renders role-aware links based on selected demo profile', async () => {
-    vi.stubEnv('VITE_DEV_PROFILE_SWITCH', 'true');
     render(<App />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
