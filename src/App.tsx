@@ -31,6 +31,7 @@ type Segnalazione = {
 };
 
 type PriorityItem = { id: string; titolo: string; categoria: string; trend: string; supporti: number };
+type DemoModeState = 'on' | 'off' | 'unknown';
 
 type Screen = 'login' | 'home' | 'wizard' | 'priorita' | 'dettaglio';
 type WizardStep = 1 | 2 | 3;
@@ -86,8 +87,14 @@ export default function App() {
 
   const [priorityItems, setPriorityItems] = useState<PriorityItem[]>([]);
   const [detail, setDetail] = useState<Segnalazione | null>(null);
+  const [demoModeState, setDemoModeState] = useState<DemoModeState>('unknown');
+  const [demoModeOutput, setDemoModeOutput] = useState('');
+  const [demoModeBusy, setDemoModeBusy] = useState(false);
+  const [demoModeFeedback, setDemoModeFeedback] = useState('');
 
   const headers = useMemo(() => ({ 'x-user-id': userId, 'x-tenant-id': tenantId }), [tenantId, userId]);
+
+  const isAdmin = (access?.portal_roles ?? []).includes('admin') || access?.portal_role === 'admin';
 
   const userSettingsLinks = useMemo(() => {
     const roleSet = new Set(access?.portal_roles ?? (access?.portal_role ? [access.portal_role] : []));
@@ -171,6 +178,25 @@ export default function App() {
     })();
   }, [activeScreen, detail?.id, headers, tenantId]);
 
+  useEffect(() => {
+    if (!isAdmin) {
+      setDemoModeState('unknown');
+      setDemoModeOutput('');
+      return;
+    }
+
+    void (async () => {
+      try {
+        const res = await api.get('/v1/admin/demo-mode', { headers });
+        setDemoModeState((res.data?.state ?? 'unknown') as DemoModeState);
+        setDemoModeOutput(String(res.data?.output ?? ''));
+      } catch {
+        setDemoModeState('unknown');
+        setDemoModeOutput('Funzione non disponibile (flag backend disattivo o endpoint non raggiungibile).');
+      }
+    })();
+  }, [headers, isAdmin]);
+
   const openWizard = () => {
     setWizardStep(1); setWizardError(''); setWizardTitle(''); setWizardDescription(''); setWizardAddress(''); setWizardTags(''); setWizardDuplicateOf(''); setDuplicateCandidates([]); setDuplicateMode(null); setActiveScreen('wizard');
   };
@@ -240,6 +266,21 @@ export default function App() {
     }
   };
 
+  const switchDemoMode = async (mode: 'on' | 'off') => {
+    setDemoModeBusy(true);
+    setDemoModeFeedback('');
+    try {
+      const res = await api.post('/v1/admin/demo-mode', { mode }, { headers });
+      setDemoModeState((res.data?.state ?? 'unknown') as DemoModeState);
+      setDemoModeOutput(String(res.data?.status_output ?? res.data?.output ?? ''));
+      setDemoModeFeedback(`Modalità Test DB impostata su ${mode.toUpperCase()}.`);
+    } catch {
+      setDemoModeFeedback('Operazione non riuscita. Verifica flag backend e permessi admin.');
+    } finally {
+      setDemoModeBusy(false);
+    }
+  };
+
   const priorityCategories = Array.from(new Set(priorityItems.map((p) => p.categoria))).slice(0, 6);
 
   return (
@@ -247,7 +288,7 @@ export default function App() {
       {devProfileSwitchEnabled && <section className="card dev-profile-switcher" data-testid="dev-profile-switcher"><div className="dev-profile-switcher__header"><p className="eyebrow">Dev profile switch</p><span className="test-mode-badge">MODALITÀ TEST</span></div><label>Profilo simulato<select aria-label="Profilo sviluppo" value={selectedDevProfile} onChange={(e) => onDevProfileChange(e.target.value as DevProfileKey)}>{devProfiles.map((profile) => <option key={profile.key} value={profile.key}>{profile.label}</option>)}</select></label><p className="muted">Header API effettivi: x-user-id {userId} • x-tenant-id {tenantId}</p></section>}
       {activeScreen === 'login' && <section className="screen card institutional-login"><p className="eyebrow">Portale Istituzionale Segnalazioni</p><h1>Accedi con identità digitale</h1><p className="muted">Servizio comunale per segnalazioni, priorità e aggiornamenti sul territorio.</p><div className="spid-card"><strong>SPID / CIE</strong><p>Autenticazione sicura per cittadini e operatori.</p><button type="button" onClick={() => setActiveScreen('home')}>Entra con SPID</button></div></section>}
 
-      {activeScreen === 'home' && <section className="screen home-screen"><header className="card welcome"><p className="eyebrow">Comune di riferimento</p><h2>Benvenuto nel portale segnalazioni</h2><p className="muted">Consulta aggiornamenti, crea nuove segnalazioni e monitora lo stato delle tue richieste.</p><button type="button" className="primary" onClick={openWizard}>Crea segnalazione</button></header><article className="card"><h3>In evidenza</h3>{homeError && <p className="muted">{homeError}</p>}<div className="horizontal-list">{featuredItems.map((i) => <div key={i.title} className="feature-card"><span>{i.badge}</span><strong>{i.title}</strong><p>{i.text}</p></div>)}</div></article><article className="card"><h3>Le mie segnalazioni</h3><ul className="plain-list">{myReports.map((r) => <li key={r.id}><div><strong>{r.titolo}</strong><p>{r.id} • {r.stato}</p></div><small>{r.supporti} supporti</small></li>)}</ul></article><article className="card"><h3>Documentazione pubblica</h3><ul className="plain-list docs-list">{[...(publicDocs.global ?? []), ...(publicDocs.tenant ?? [])].map((d) => <li key={d.slug}>{d.title}</li>)}</ul></article><article className="card"><h3>Impostazioni utente</h3><p className="muted">Gestione profilo e accessi al portale.</p>{userSettingsLinks.length > 0 ? <ul className="plain-list docs-list settings-links">{userSettingsLinks.map((link) => <li key={link.href}><a href={link.href}>{link.label}</a></li>)}</ul> : <p className="muted">Nessuna area amministrativa disponibile per il tuo profilo.</p>}</article></section>}
+      {activeScreen === 'home' && <section className="screen home-screen"><header className="card welcome"><p className="eyebrow">Comune di riferimento</p><h2>Benvenuto nel portale segnalazioni</h2><p className="muted">Consulta aggiornamenti, crea nuove segnalazioni e monitora lo stato delle tue richieste.</p><button type="button" className="primary" onClick={openWizard}>Crea segnalazione</button></header><article className="card"><h3>In evidenza</h3>{homeError && <p className="muted">{homeError}</p>}<div className="horizontal-list">{featuredItems.map((i) => <div key={i.title} className="feature-card"><span>{i.badge}</span><strong>{i.title}</strong><p>{i.text}</p></div>)}</div></article><article className="card"><h3>Le mie segnalazioni</h3><ul className="plain-list">{myReports.map((r) => <li key={r.id}><div><strong>{r.titolo}</strong><p>{r.id} • {r.stato}</p></div><small>{r.supporti} supporti</small></li>)}</ul></article><article className="card"><h3>Documentazione pubblica</h3><ul className="plain-list docs-list">{[...(publicDocs.global ?? []), ...(publicDocs.tenant ?? [])].map((d) => <li key={d.slug}>{d.title}</li>)}</ul></article><article className="card"><h3>Impostazioni utente</h3><p className="muted">Gestione profilo e accessi al portale.</p>{userSettingsLinks.length > 0 ? <ul className="plain-list docs-list settings-links">{userSettingsLinks.map((link) => <li key={link.href}><a href={link.href}>{link.label}</a></li>)}</ul> : <p className="muted">Nessuna area amministrativa disponibile per il tuo profilo.</p>}{isAdmin && <section className="demo-mode-panel" aria-label="Modalità Test DB"><h4>Modalità Test DB</h4><p className="muted warning-text">⚠️ Solo sviluppo locale. Non abilitare in produzione. Flag richiesto: ENABLE_DEMO_MODE_SWITCH=true.</p><p className="muted">Stato corrente: <strong>{demoModeState === 'on' ? 'ON' : demoModeState === 'off' ? 'OFF' : 'SCONOSCIUTO'}</strong></p><div className="inline-actions"><button type="button" onClick={() => switchDemoMode('on')} disabled={demoModeBusy}>ON</button><button type="button" onClick={() => switchDemoMode('off')} disabled={demoModeBusy}>OFF</button></div>{demoModeFeedback && <p className="success-text">{demoModeFeedback}</p>}{demoModeOutput && <p className="muted demo-mode-output">{demoModeOutput}</p>}</section>}</article></section>}
 
       {activeScreen === 'wizard' && <section className="screen card">
         {wizardStep === 1 && <form className="screen" onSubmit={wizardStep1}><p className="eyebrow">Nuova segnalazione • Step 1 di 3</p><h2>Descrivi il problema</h2><label>Titolo<input aria-label="Titolo segnalazione" value={wizardTitle} onChange={(e) => setWizardTitle(e.target.value)} /></label><label>Descrizione<textarea aria-label="Descrizione segnalazione" value={wizardDescription} onChange={(e) => setWizardDescription(e.target.value)} /></label>{wizardError && <p className="error-text">{wizardError}</p>}<div className="row-actions"><button type="button" onClick={() => setActiveScreen('home')}>Annulla</button><button type="submit" className="primary">Prosegui</button></div></form>}

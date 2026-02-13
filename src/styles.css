@@ -137,6 +137,25 @@ h1, h2, h3, p { margin: 0; }
   padding: 6px 10px;
 }
 
+.demo-mode-panel {
+  margin-top: 12px;
+  border: 1px solid #f3d7a5;
+  background: #fff8eb;
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.warning-text {
+  color: #8a4b08;
+}
+
+.demo-mode-output {
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+}
+
 .chips {
   display: flex;
   gap: 8px;

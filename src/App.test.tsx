@@ -26,6 +26,8 @@ const accessByUser: Record<string, { portal_role: 'citizen' | 'maintainer' | 'ad
   '00000000-0000-0000-0000-000000000333': { portal_role: 'admin', portal_roles: ['admin', 'maintainer', 'citizen'] }
 };
 
+let demoModeState: 'on' | 'off' | 'unknown' = 'off';
+
 function primeAccess() {
   getMock.mockImplementation((url: string, config?: { headers?: Record<string, string> }) => {
     const userId = config?.headers?.['x-user-id'] ?? '00000000-0000-0000-0000-000000000111';
@@ -37,6 +39,7 @@ function primeAccess() {
     if (url === '/v1/segnalazioni') return Promise.resolve({ data: { items: [{ id: 's1', titolo: 'Buca via Roma', stato: 'in_attesa', descrizione: 'Test', created_by: userId }] } });
     if (url === '/v1/segnalazioni/priorities') return Promise.resolve({ data: { items: [{ id: 's1', titolo: 'Buca via Roma', categoria: 'Viabilità', trend: '+12%', supporti: 3 }] } });
     if (url === '/v1/segnalazioni/s1') return Promise.resolve({ data: { id: 's1', codice: 'SGN-1', titolo: 'Buca via Roma', descrizione: 'Dettaglio reale da DB', timeline: [] } });
+    if (url === '/v1/admin/demo-mode') return Promise.resolve({ data: { state: demoModeState, output: `status ${demoModeState}` } });
     return Promise.resolve({ data: {} });
   });
 }
@@ -45,6 +48,17 @@ describe('Portale PA mobile dettaglio', () => {
   beforeEach(() => {
     getMock.mockReset();
     postMock.mockReset();
+    demoModeState = 'off';
+    postMock.mockImplementation((url: string, payload?: { mode?: 'on' | 'off' }) => {
+      if (url === '/v1/admin/demo-mode') {
+        demoModeState = payload?.mode ?? demoModeState;
+        return Promise.resolve({ data: { state: demoModeState, status_output: `status ${demoModeState}` } });
+      }
+      if (url === '/v1/segnalazioni/s1/vote-toggle') {
+        return Promise.resolve({ data: { votes_count: 4 } });
+      }
+      return Promise.resolve({ data: {} });
+    });
     vi.stubEnv('VITE_DEV_PROFILE_SWITCH', 'false');
     primeAccess();
   });
@@ -99,8 +113,24 @@ describe('Portale PA mobile dettaglio', () => {
     expect(await screen.findByRole('link', { name: 'Apri area amministrazione' })).toHaveAttribute('href', '/admin?tenant_id=00000000-0000-0000-0000-000000000001');
   });
 
+  it('shows and controls Modalità Test DB only for admin users', async () => {
+    render(<App />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    expect(screen.queryByRole('region', { name: 'Modalità Test DB' })).not.toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText('Profilo sviluppo'), 'admin_demo');
+
+    const demoPanel = await screen.findByRole('region', { name: 'Modalità Test DB' });
+    expect(demoPanel).toBeInTheDocument();
+    expect(demoPanel).toHaveTextContent('Stato corrente: OFF');
+
+    await userEvent.click(screen.getByRole('button', { name: 'ON' }));
+    expect(await screen.findByText('Modalità Test DB impostata su ON.')).toBeInTheDocument();
+    expect(demoPanel).toHaveTextContent('Stato corrente: ON');
+  });
+
   it('loads priorities and detail from API endpoints (no local mock cards)', async () => {
-    postMock.mockResolvedValue({ data: { votes_count: 4 } });
     render(<App />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
