@@ -1,6 +1,6 @@
 import { Button } from './Button';
 
-type Item = { key: string; label: string; onClick: () => void };
+type Item = { key: string; label: string; icon: string; onClick: () => void };
 
 export function BottomNav({ items, activeKey }: { items: Item[]; activeKey: string }) {
   return (
@@ -11,11 +11,12 @@ export function BottomNav({ items, activeKey }: { items: Item[]; activeKey: stri
           type="button"
           variant="ghost"
           onClick={item.onClick}
-          className={activeKey === item.key ? 'active' : ''}
+          className={activeKey === item.key ? 'active nav-item' : 'nav-item'}
           aria-current={activeKey === item.key ? 'page' : undefined}
           data-testid={`bottom-nav-${item.key}`}
         >
-          {item.label}
+          <span className="nav-item__icon" aria-hidden="true">{item.icon}</span>
+          <span className="nav-item__label">{item.label}</span>
         </Button>
       ))}
     </nav>

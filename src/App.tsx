@@ -9,28 +9,13 @@ import { Input, TextArea } from './components/ui/Input';
 import { THEME_STORAGE_KEY, ThemeMode, applyTheme, getInitialTheme } from './theme/tokens';
 
 type PortalRole = 'admin' | 'maintainer' | 'citizen';
-type Access = {
-  user_id?: string;
-  tenant_id?: string;
-  tenant_ids?: string[];
-  portal_role?: PortalRole;
-  portal_roles?: PortalRole[];
-};
+type Access = { user_id?: string; tenant_id?: string; tenant_ids?: string[]; portal_role?: PortalRole; portal_roles?: PortalRole[] };
 type Branding = { primary_color: string; secondary_color: string; logo_url?: string | null };
 type Doc = { slug: string; title: string };
 type Segnalazione = {
-  id?: string;
-  codice?: string;
-  titolo?: string;
-  descrizione?: string;
-  stato?: string;
-  created_by?: string;
-  reported_by?: string;
-  user_id?: string;
-  author_id?: string;
-  votes_count?: number;
-  supporti?: number;
-  updated_at?: string;
+  id?: string; codice?: string; titolo?: string; descrizione?: string; stato?: string;
+  created_by?: string; reported_by?: string; user_id?: string; author_id?: string;
+  votes_count?: number; supporti?: number; updated_at?: string;
   timeline?: Array<{ id?: string; message?: string; event_type?: string; created_at?: string }>;
 };
 
@@ -39,16 +24,14 @@ type DemoModeState = 'on' | 'off' | 'unknown';
 type AssistedTag = { id: string; slug: string; label: string };
 type AssistedAddress = { id: string; address: string; reference_code: string; lat: number; lng: number };
 type AddressValidation = {
-  validated: boolean;
-  source: 'tenant_address_catalog';
-  catalog_id: string;
-  normalized_address: string;
-  reference_code: string;
-  lat: number;
-  lng: number;
+  validated: boolean; source: 'tenant_address_catalog'; catalog_id: string; normalized_address: string;
+  reference_code: string; lat: number; lng: number;
 };
 
-type Screen = 'login' | 'home' | 'wizard' | 'priorita' | 'dettaglio';
+type NotificationKind = 'status' | 'update' | 'assignment';
+type AppNotification = { id: string; kind: NotificationKind; title: string; body: string; timestamp: string; unread: boolean };
+
+type Screen = 'login' | 'home' | 'wizard' | 'priorita' | 'dettaglio' | 'profilo' | 'notifiche';
 type WizardStep = 1 | 2 | 3;
 type DevProfileKey = 'citizen_demo' | 'maintainer_demo' | 'admin_demo';
 type DevProfile = { key: DevProfileKey; label: string; userId: string; tenantId: string };
@@ -76,7 +59,7 @@ export default function App() {
   const [userId, setUserId] = useState(defaultUser);
   const [selectedDevProfile, setSelectedDevProfile] = useState<DevProfileKey>('citizen_demo');
   const [access, setAccess] = useState<Access | null>(null);
-  const [branding, setBranding] = useState<Branding>({ primary_color: '#0055A4', secondary_color: '#FFFFFF' });
+  const [, setBranding] = useState<Branding>({ primary_color: '#0055A4', secondary_color: '#FFFFFF' });
   const [publicDocs, setPublicDocs] = useState<{ global: Doc[]; tenant: Doc[] }>({ global: [], tenant: [] });
 
   const [activeScreen, setActiveScreen] = useState<Screen>('login');
@@ -102,6 +85,7 @@ export default function App() {
 
   const [priorityItems, setPriorityItems] = useState<PriorityItem[]>([]);
   const [detail, setDetail] = useState<Segnalazione | null>(null);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [demoModeState, setDemoModeState] = useState<DemoModeState>('unknown');
   const [demoModeOutput, setDemoModeOutput] = useState('');
   const [demoModeBusy, setDemoModeBusy] = useState(false);
@@ -130,6 +114,12 @@ export default function App() {
     if (roleSet.has('maintainer')) return ownedTenants.map((id) => ({ label: `Area maintainer • tenant ${id}`, href: `/maintainer?tenant_id=${id}` }));
     return [] as Array<{ label: string; href: string }>;
   }, [access, tenantId]);
+
+  const unreadNotifications = notifications.filter((item) => item.unread).length;
+
+  const screenTitle = useMemo(() => ({
+    home: 'Home', wizard: 'Nuova segnalazione', priorita: 'Priorità', dettaglio: 'Dettaglio', profilo: 'Profilo', notifiche: 'Notifiche'
+  } as Record<Exclude<Screen, 'login'>, string>), []);
 
   useEffect(() => {
     void (async () => {
@@ -231,6 +221,26 @@ export default function App() {
     })();
   }, [activeScreen, headers, tenantId, wizardAddress, wizardStep]);
 
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await api.get('/v1/notifications', { headers, params: { tenant_id: tenantId, page: 1, page_size: 25 } });
+        const items = (res.data?.items ?? []) as AppNotification[];
+        if (items.length > 0) {
+          setNotifications(items);
+          return;
+        }
+        throw new Error('no feed');
+      } catch {
+        const fallback: AppNotification[] = [
+          ...myReports.slice(0, 3).map((report, idx) => ({ id: `status-${report.id}`, kind: 'status' as const, title: `Aggiornamento segnalazione ${report.id}`, body: `${report.titolo} • stato ${report.stato}`, timestamp: new Date(Date.now() - idx * 3600000).toISOString(), unread: idx < 2 })),
+          ...priorityItems.slice(0, 2).map((item, idx) => ({ id: `assignment-${item.id}`, kind: 'assignment' as const, title: `Priorità territoriale: ${item.categoria}`, body: `${item.titolo} ora con ${item.supporti} supporti.`, timestamp: new Date(Date.now() - (idx + 3) * 3600000).toISOString(), unread: false }))
+        ];
+        setNotifications(fallback);
+      }
+    })();
+  }, [headers, myReports, priorityItems, tenantId]);
+
   const onDevProfileChange = (profileKey: DevProfileKey) => {
     const profile = devProfiles.find((item) => item.key === profileKey);
     if (!profile) return;
@@ -316,20 +326,72 @@ export default function App() {
     }
   };
 
+  const nonLoginScreen = activeScreen !== 'login';
+
   return (
     <main className="app-shell mobile-shell">
-      {devProfileSwitchEnabled && (
-        <Card className="dev-profile-switcher" testId="dev-profile-switcher">
-          <div className="dev-profile-switcher__header"><p className="eyebrow">Dev profile switch</p><Badge tone="warning">MODALITÀ TEST</Badge></div>
-          <label>Profilo simulato<select aria-label="Profilo sviluppo" value={selectedDevProfile} onChange={(e) => onDevProfileChange(e.target.value as DevProfileKey)}>{devProfiles.map((profile) => <option key={profile.key} value={profile.key}>{profile.label}</option>)}</select></label>
-          <div className="inline-actions"><Button type="button" onClick={() => setThemeMode((t) => t === 'light' ? 'dark' : 'light')}>Tema: {themeMode === 'light' ? 'Chiaro' : 'Scuro'}</Button></div>
-          <p className="muted">Header API effettivi: x-user-id {userId} • x-tenant-id {tenantId}</p>
-        </Card>
+      {nonLoginScreen && (
+        <header className="app-topbar" aria-label="Barra superiore">
+          <h1>{screenTitle[activeScreen as Exclude<Screen, 'login'>]}</h1>
+          <div className="app-topbar__actions">
+            <button type="button" aria-label="Cerca" className="icon-btn" onClick={() => setActiveScreen('home')}>🔎</button>
+            <button type="button" aria-label="Notifiche" className="icon-btn" onClick={() => setActiveScreen('notifiche')}>🔔{unreadNotifications > 0 && <span className="icon-badge">{Math.min(unreadNotifications, 9)}</span>}</button>
+            <button type="button" aria-label="Profilo" className="icon-btn" onClick={() => setActiveScreen('profilo')}>👤</button>
+          </div>
+        </header>
       )}
 
       {activeScreen === 'login' && <Card className="screen institutional-login"><p className="eyebrow">Portale Istituzionale Segnalazioni</p><h1>Accedi con identità digitale</h1><p className="muted">Servizio comunale per segnalazioni, priorità e aggiornamenti sul territorio.</p><div className="spid-card"><strong>SPID / CIE</strong><p>Autenticazione sicura per cittadini e operatori.</p><Button type="button" variant="primary" onClick={() => setActiveScreen('home')}>Entra con SPID</Button></div></Card>}
 
-      {activeScreen === 'home' && <section className="screen home-screen"><Card as="header" className="welcome"><p className="eyebrow">Comune di riferimento</p><h2>Benvenuto nel portale segnalazioni</h2><p className="muted">Consulta aggiornamenti, crea nuove segnalazioni e monitora lo stato delle tue richieste.</p><Button type="button" variant="primary" onClick={openWizard}>Crea segnalazione</Button></Card><Card as="article"><h3>In evidenza</h3>{homeError && <p className="muted">{homeError}</p>}<div className="horizontal-list">{featuredItems.map((i) => <div key={i.title} className="feature-card"><Badge>{i.badge}</Badge><strong>{i.title}</strong><p>{i.text}</p></div>)}</div></Card><Card as="article"><h3>Le mie segnalazioni</h3><ul className="plain-list">{myReports.map((r) => <li key={r.id}><div><strong>{r.titolo}</strong><p>{r.id} • {r.stato}</p></div><small>{r.supporti} supporti</small></li>)}</ul></Card><Card as="article"><h3>Documentazione pubblica</h3><ul className="plain-list docs-list">{[...(publicDocs.global ?? []), ...(publicDocs.tenant ?? [])].map((d) => <li key={d.slug}>{d.title}</li>)}</ul></Card><Card as="article"><h3>Impostazioni utente</h3><p className="muted">Gestione profilo e accessi al portale.</p><div className="inline-actions"><Button type="button" onClick={() => setThemeMode((t) => t === 'light' ? 'dark' : 'light')}>Tema: {themeMode === 'light' ? 'Chiaro' : 'Scuro'}</Button></div>{userSettingsLinks.length > 0 ? <ul className="plain-list docs-list settings-links">{userSettingsLinks.map((link) => <li key={link.href}><a href={link.href}>{link.label}</a></li>)}</ul> : <p className="muted">Nessuna area amministrativa disponibile per il tuo profilo.</p>}{isAdmin && <section className="demo-mode-panel" aria-label="Modalità Test DB"><h4>Modalità Test DB</h4><p className="muted warning-text">⚠️ Solo sviluppo locale. Non abilitare in produzione. Flag richiesto: ENABLE_DEMO_MODE_SWITCH=true.</p><p className="muted">Stato corrente: <strong>{demoModeState === 'on' ? 'ON' : demoModeState === 'off' ? 'OFF' : 'SCONOSCIUTO'}</strong></p><div className="inline-actions"><Button type="button" onClick={() => switchDemoMode('on')} disabled={demoModeBusy}>ON</Button><Button type="button" onClick={() => switchDemoMode('off')} disabled={demoModeBusy}>OFF</Button></div>{demoModeFeedback && <p className="success-text">{demoModeFeedback}</p>}{demoModeOutput && <p className="muted demo-mode-output">{demoModeOutput}</p>}</section>}</Card></section>}
+      {activeScreen === 'home' && <section className="screen home-screen"><Card as="article"><h3>In evidenza</h3>{homeError && <p className="muted">{homeError}</p>}<div className="horizontal-list">{featuredItems.map((i) => <div key={i.title} className="feature-card"><Badge>{i.badge}</Badge><strong>{i.title}</strong><p>{i.text}</p></div>)}</div><Button type="button" variant="primary" onClick={openWizard}>Crea segnalazione</Button></Card><Card as="article"><h3>Le mie segnalazioni</h3><ul className="plain-list">{myReports.map((r) => <li key={r.id}><div><strong>{r.titolo}</strong><p>{r.id} • {r.stato}</p></div><small>{r.supporti} supporti</small></li>)}</ul></Card><Card as="article"><h3>Documentazione pubblica</h3><ul className="plain-list docs-list">{[...(publicDocs.global ?? []), ...(publicDocs.tenant ?? [])].map((d) => <li key={d.slug}>{d.title}</li>)}</ul></Card></section>}
+
+      {activeScreen === 'notifiche' && (
+        <section className="screen" data-testid="notifications-screen">
+          <Card as="article">
+            <h3>Centro notifiche</h3>
+            <p className="muted">Feed strutturato pronto per integrazione backend.</p>
+            <ul className="plain-list notifications-list" aria-label="Lista notifiche">
+              {notifications.map((notification) => (
+                <li key={notification.id} className={`notification-card notification-${notification.kind}`}>
+                  <div>
+                    <p className="eyebrow">{notification.kind}</p>
+                    <strong>{notification.title}</strong>
+                    <p>{notification.body}</p>
+                  </div>
+                  <small>{new Date(notification.timestamp).toLocaleString('it-IT')}</small>
+                </li>
+              ))}
+            </ul>
+            {notifications.length === 0 && <p className="muted">Nessuna notifica disponibile.</p>}
+          </Card>
+        </section>
+      )}
+
+      {activeScreen === 'profilo' && (
+        <section className="screen" data-testid="profile-screen">
+          <Card as="article">
+            <h3>Profilo e impostazioni</h3>
+            <ul className="plain-list docs-list">
+              <li><strong>User ID:</strong> {userId}</li>
+              <li><strong>Tenant ID:</strong> {tenantId}</li>
+              <li><strong>Ruolo:</strong> {(access?.portal_role ?? 'citizen').toUpperCase()}</li>
+            </ul>
+            {userSettingsLinks.length > 0 ? <ul className="plain-list docs-list settings-links">{userSettingsLinks.map((link) => <li key={link.href}><a href={link.href}>{link.label}</a></li>)}</ul> : <p className="muted">Nessuna area amministrativa disponibile per il tuo profilo.</p>}
+          </Card>
+
+          <Card as="article" aria-label="Modalità test">
+            <div className="dev-profile-switcher__header"><h3>Modalità test</h3><Badge tone="warning">MODALITÀ TEST</Badge></div>
+            {devProfileSwitchEnabled && (
+              <div className="dev-profile-switcher" data-testid="dev-profile-switcher">
+                <label>Profilo simulato<select aria-label="Profilo sviluppo" value={selectedDevProfile} onChange={(e) => onDevProfileChange(e.target.value as DevProfileKey)}>{devProfiles.map((profile) => <option key={profile.key} value={profile.key}>{profile.label}</option>)}</select></label>
+              </div>
+            )}
+            <div className="inline-actions"><Button type="button" onClick={() => setThemeMode((t) => t === 'light' ? 'dark' : 'light')}>Tema: {themeMode === 'light' ? 'Chiaro' : 'Scuro'}</Button></div>
+            <p className="muted">Header API effettivi: x-user-id {userId} • x-tenant-id {tenantId}</p>
+            {isAdmin && <section className="demo-mode-panel" aria-label="Modalità Test DB"><h4>Modalità Test DB</h4><p className="muted warning-text">⚠️ Solo sviluppo locale. Non abilitare in produzione. Flag richiesto: ENABLE_DEMO_MODE_SWITCH=true.</p><p className="muted">Stato corrente: <strong>{demoModeState === 'on' ? 'ON' : demoModeState === 'off' ? 'OFF' : 'SCONOSCIUTO'}</strong></p><div className="inline-actions"><Button type="button" onClick={() => switchDemoMode('on')} disabled={demoModeBusy}>ON</Button><Button type="button" onClick={() => switchDemoMode('off')} disabled={demoModeBusy}>OFF</Button></div>{demoModeFeedback && <p className="success-text">{demoModeFeedback}</p>}{demoModeOutput && <p className="muted demo-mode-output">{demoModeOutput}</p>}</section>}
+          </Card>
+        </section>
+      )}
 
       {activeScreen === 'wizard' && <Card className="screen wizard-shell" testId="wizard-shell">
         <header className="wizard-head">
@@ -354,10 +416,11 @@ export default function App() {
       {activeScreen !== 'login' && <BottomNav
         activeKey={activeScreen}
         items={[
-          { key: 'home', label: 'Home', onClick: () => setActiveScreen('home') },
-          { key: 'wizard', label: 'Nuova', onClick: openWizard },
-          { key: 'priorita', label: 'Priorità', onClick: () => setActiveScreen('priorita') },
-          { key: 'dettaglio', label: 'Dettaglio', onClick: () => setActiveScreen('dettaglio') }
+          { key: 'home', label: 'Home', icon: '🏠', onClick: () => setActiveScreen('home') },
+          { key: 'wizard', label: 'Nuova', icon: '➕', onClick: openWizard },
+          { key: 'priorita', label: 'Priorità', icon: '📊', onClick: () => setActiveScreen('priorita') },
+          { key: 'notifiche', label: 'Notifiche', icon: '🔔', onClick: () => setActiveScreen('notifiche') },
+          { key: 'profilo', label: 'Profilo', icon: '👤', onClick: () => setActiveScreen('profilo') }
         ]}
       />}
     </main>
