@@ -56,7 +56,11 @@ export const themePalettes: Record<ThemeMode, Record<string, string>> = {
     '--color-warning-text': '#8a4b08',
     '--color-success-bg': '#edf7ef',
     '--color-success-text': '#0f5132',
-    '--color-danger-text': '#b42318'
+    '--color-danger-text': '#b42318',
+    '--gradient-app-bg': 'linear-gradient(180deg, #f5f8fc 0%, var(--color-bg) 220px)',
+    '--gradient-wizard': 'linear-gradient(180deg, #fcfdff 0%, #f6f9fe 100%)',
+    '--gradient-card-elevated': 'linear-gradient(180deg, #ffffff 0%, var(--color-surface-soft) 100%)',
+    '--shadow-nav': '0 -8px 24px rgba(17, 38, 66, 0.08)'
   },
   dark: {
     '--color-bg': '#0b1220',
@@ -74,7 +78,11 @@ export const themePalettes: Record<ThemeMode, Record<string, string>> = {
     '--color-warning-text': '#f0c27b',
     '--color-success-bg': '#123325',
     '--color-success-text': '#94dfb5',
-    '--color-danger-text': '#ff8a80'
+    '--color-danger-text': '#ff8a80',
+    '--gradient-app-bg': 'linear-gradient(180deg, #0f1b2d 0%, var(--color-bg) 220px)',
+    '--gradient-wizard': 'linear-gradient(180deg, #16253a 0%, #0f1d32 100%)',
+    '--gradient-card-elevated': 'linear-gradient(180deg, #182741 0%, var(--color-surface-soft) 100%)',
+    '--shadow-nav': '0 -8px 24px rgba(0, 0, 0, 0.45)'
   }
 };
 

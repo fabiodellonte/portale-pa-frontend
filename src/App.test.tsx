@@ -82,10 +82,13 @@ describe('Portale PA mobile dettaglio', () => {
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'));
     expect(screen.getAllByRole('button', { name: 'Tema: Scuro' }).length).toBeGreaterThan(0);
+    expect(document.documentElement.style.getPropertyValue('--gradient-wizard')).toContain('#16253a');
+    expect(document.documentElement.style.getPropertyValue('--shadow-nav')).toContain('0.45');
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Tema: Scuro' })[0]);
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('light'));
     expect(localStorage.getItem('portale-pa-theme-mode')).toBe('light');
+    expect(document.documentElement.style.getPropertyValue('--gradient-wizard')).toContain('#fcfdff');
   });
 
   it('hides bottom nav before authentication and keeps direct dashboard login flow', async () => {
@@ -96,6 +99,22 @@ describe('Portale PA mobile dettaglio', () => {
 
     expect(await screen.findByRole('heading', { name: 'Benvenuto nel portale segnalazioni' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Navigazione mobile' })).toBeInTheDocument();
+    expect(screen.getByTestId('bottom-nav-home')).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('keeps bottom nav active state aligned while moving across core screens', async () => {
+    render(<App />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    await screen.findByRole('heading', { name: 'Benvenuto nel portale segnalazioni' });
+
+    await userEvent.click(screen.getByTestId('bottom-nav-priorita'));
+    expect(await screen.findByTestId('priority-shell')).toBeInTheDocument();
+    expect(screen.getByTestId('bottom-nav-priorita')).toHaveAttribute('aria-current', 'page');
+
+    await userEvent.click(screen.getByTestId('bottom-nav-wizard'));
+    expect(await screen.findByTestId('wizard-shell')).toBeInTheDocument();
+    expect(screen.getByTestId('bottom-nav-wizard')).toHaveAttribute('aria-current', 'page');
   });
 
   it('smoke renders Login and Home with new visual shell', async () => {
