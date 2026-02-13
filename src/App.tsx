@@ -7,8 +7,12 @@ type Tenant = {
   codice_fiscale_ente?: string;
 };
 
+const resolvedApiBase =
+  import.meta.env.VITE_API_BASE_URL ||
+  `http://${window.location.hostname}:18080`;
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
+  baseURL: resolvedApiBase
 });
 
 export default function App() {
