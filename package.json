@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "axios": "^1.7.9",
@@ -21,9 +23,25 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^3.2.4",
     "jsdom": "^26.0.0",
     "typescript": "^5.7.3",
     "vite": "^6.0.7",
     "vitest": "^3.0.5"
+  },
+  "vitest": {
+    "coverage": {
+      "provider": "v8",
+      "reporter": [
+        "text",
+        "lcov"
+      ],
+      "thresholds": {
+        "lines": 65,
+        "functions": 50,
+        "branches": 45,
+        "statements": 65
+      }
+    }
   }
 }
