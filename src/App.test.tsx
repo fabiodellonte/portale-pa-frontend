@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
+  put: vi.fn(),
   post: vi.fn(),
   del: vi.fn()
 }));
@@ -12,6 +13,7 @@ vi.mock('axios', () => ({
   default: {
     create: () => ({
       get: apiMocks.get,
+      put: apiMocks.put,
       post: apiMocks.post,
       delete: apiMocks.del
     })
@@ -20,65 +22,70 @@ vi.mock('axios', () => ({
 
 import App from './App';
 
-describe('Portale PA frontend', () => {
+describe('Portale PA frontend phase 4', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.history.pushState({}, '', '/');
   });
 
-  it('renders homepage metrics and ranking', async () => {
+  it('saves language selection', async () => {
     apiMocks.get
-      .mockResolvedValueOnce({ data: { total_segnalazioni: 8, total_votes: 20, total_follows: 4, by_status: {} } })
-      .mockResolvedValueOnce({ data: { items: [{ id: 's1', titolo: 'Lampione guasto', descrizione: 'x' }] } });
+      .mockResolvedValueOnce({ data: { language: 'it' } })
+      .mockResolvedValueOnce({ data: { can_manage_branding: false, can_manage_roles: false } })
+      .mockResolvedValueOnce({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } });
 
     render(<App />);
 
-    expect(await screen.findByText('8')).toBeInTheDocument();
-    expect(screen.getByText('Lampione guasto')).toBeInTheDocument();
-  });
-
-  it('applies realtime filters on segnalazioni list', async () => {
-    window.history.pushState({}, '', '/segnalazioni');
-    apiMocks.get.mockResolvedValue({ data: { items: [] } });
-
-    render(<App />);
-
-    await userEvent.type(screen.getByLabelText('Ricerca'), 'strada');
+    await userEvent.selectOptions(await screen.findByLabelText('Lingua'), 'en');
+    await userEvent.click(screen.getByRole('button', { name: 'Salva lingua' }));
 
     await waitFor(() => {
-      expect(apiMocks.get).toHaveBeenLastCalledWith('/v1/segnalazioni', expect.objectContaining({
-        params: expect.objectContaining({ search: 'strada' })
-      }));
+      expect(apiMocks.put).toHaveBeenCalledWith('/v1/me/preferences/language', { language: 'en' }, expect.any(Object));
     });
   });
 
-  it('toggles vote from detail page', async () => {
-    window.history.pushState({}, '', '/segnalazioni/abc-1');
-    apiMocks.get.mockResolvedValue({ data: { id: 'abc-1', titolo: 'Titolo', descrizione: 'Desc', timeline: [], votes_count: 0, follows_count: 0 } });
-    apiMocks.post.mockResolvedValue({ data: {} });
+  it('shows branding form only for tenant admin and saves', async () => {
+    apiMocks.get
+      .mockResolvedValueOnce({ data: { language: 'it' } })
+      .mockResolvedValueOnce({ data: { can_manage_branding: true, can_manage_roles: false } })
+      .mockResolvedValueOnce({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } });
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole('button', { name: /Vota/i }));
+    const primary = await screen.findByLabelText('Colore primario');
+    await userEvent.clear(primary);
+    await userEvent.type(primary, '#123456');
+    await userEvent.click(screen.getByRole('button', { name: 'Salva branding' }));
 
     await waitFor(() => {
-      expect(apiMocks.post).toHaveBeenCalledWith('/v1/segnalazioni/abc-1/vote-toggle', expect.any(Object));
+      expect(apiMocks.put).toHaveBeenCalledWith(expect.stringContaining('/branding'), expect.objectContaining({ primary_color: '#123456' }), expect.any(Object));
     });
   });
 
-  it('submits wizard payload at step 2', async () => {
-    window.history.pushState({}, '', '/segnalazioni/nuova');
-    apiMocks.post.mockResolvedValue({ data: { id: 'new-id' } });
+  it('hides role management for non-global admin', async () => {
+    apiMocks.get
+      .mockResolvedValueOnce({ data: { language: 'it' } })
+      .mockResolvedValueOnce({ data: { can_manage_branding: true, can_manage_roles: false } })
+      .mockResolvedValueOnce({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } });
 
     render(<App />);
 
-    await userEvent.type(screen.getByLabelText('Titolo'), 'Buche in strada');
-    await userEvent.type(screen.getByLabelText('Descrizione'), 'Ci sono buche profonde in via Roma.');
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Invia segnalazione' }));
+    expect(await screen.findByText('Amministrazione comunale - Branding')).toBeInTheDocument();
+    expect(screen.queryByText('Global admin - Gestione accessi multi-tenant')).not.toBeInTheDocument();
+  });
+
+  it('shows role management for global admin and assigns role', async () => {
+    apiMocks.get
+      .mockResolvedValueOnce({ data: { language: 'it' } })
+      .mockResolvedValueOnce({ data: { can_manage_branding: true, can_manage_roles: true } })
+      .mockResolvedValueOnce({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } });
+
+    render(<App />);
+
+    await userEvent.type(await screen.findByLabelText('User ID da promuovere'), '1386f06c-8d0c-4a99-a157-d3576447add2');
+    await userEvent.click(screen.getByRole('button', { name: 'Assegna ruolo tenant_admin' }));
 
     await waitFor(() => {
-      expect(apiMocks.post).toHaveBeenCalledWith('/v1/segnalazioni/wizard', expect.objectContaining({ titolo: 'Buche in strada' }));
+      expect(apiMocks.put).toHaveBeenCalledWith(expect.stringContaining('/v1/admin/roles/'), expect.objectContaining({ role_code: 'tenant_admin' }), expect.any(Object));
     });
   });
 });
