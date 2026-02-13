@@ -7,9 +7,7 @@ type Tenant = {
   codice_fiscale_ente?: string;
 };
 
-const resolvedApiBase =
-  import.meta.env.VITE_API_BASE_URL ||
-  `http://${window.location.hostname}:18080`;
+const resolvedApiBase = import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:18080`;
 
 const api = axios.create({
   baseURL: resolvedApiBase
@@ -34,6 +32,11 @@ export default function App() {
     await loadTenants();
   };
 
+  const onDelete = async (id: string) => {
+    await api.delete(`/v1/tenants/${id}`);
+    await loadTenants();
+  };
+
   return (
     <main className="container">
       <h1>Portale PA – Tenant bootstrap</h1>
@@ -49,7 +52,10 @@ export default function App() {
         <h2>Tenant esistenti</h2>
         <ul>
           {tenants.map((t) => (
-            <li key={t.id}>{t.name}</li>
+            <li key={t.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span>{t.name}</span>
+              <button onClick={() => onDelete(t.id)}>Rimuovi</button>
+            </li>
           ))}
         </ul>
       </section>
