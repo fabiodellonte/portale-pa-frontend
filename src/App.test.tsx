@@ -221,5 +221,7 @@ describe('Portale PA UX refinements', () => {
     expect(await screen.findByTestId('about-screen')).toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Dettagli versione applicazione' })).toBeInTheDocument();
     expect(screen.getByTestId('app-version')).toHaveTextContent(__APP_VERSION__);
+    expect(screen.getByTestId('app-build-commit')).toBeInTheDocument();
+    expect(screen.getByTestId('app-build-date')).toBeInTheDocument();
   });
 });

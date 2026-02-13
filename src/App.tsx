@@ -662,9 +662,9 @@ export default function App() {
             <h3>Informazioni applicazione</h3>
             <p className="muted">Versione software e metadati build del Portale PA.</p>
             <ul className="plain-list docs-list" aria-label="Dettagli versione applicazione">
-              <li><strong>Versione:</strong> <span data-testid="app-version">{appVersion}</span></li>
-              {appBuildCommit && <li><strong>Commit build:</strong> <code>{appBuildCommit}</code></li>}
-              {appBuildDate && <li><strong>Data build:</strong> {appBuildDate}</li>}
+              <li><strong>Versione:</strong> <span data-testid="app-version">{appVersion || 'n/d'}</span></li>
+              <li><strong>Commit build:</strong> <code data-testid="app-build-commit">{appBuildCommit || 'n/d'}</code></li>
+              <li><strong>Timestamp compilazione (UTC):</strong> <span data-testid="app-build-date">{appBuildDate || 'n/d'}</span></li>
             </ul>
             <div className="inline-actions">
               <Button type="button" onClick={() => setActiveScreen('profilo')}>Torna al profilo</Button>
