@@ -213,6 +213,15 @@ textarea:focus-visible {
 .plain-list li p { color: var(--color-text-muted); font-size: var(--font-sm); }
 .docs-list li { display: block; }
 .settings-links a { color: var(--color-primary); font-weight: 600; text-decoration: none; }
+.about-card {
+  display: grid;
+  gap: var(--space-3);
+  background: var(--gradient-card-elevated);
+}
+.about-card code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: var(--font-sm);
+}
 
 .demo-mode-panel { margin-top: var(--space-3); border: 1px solid var(--color-border); background: var(--color-warning-bg); border-radius: var(--radius-sm); padding: var(--space-3); display: grid; gap: var(--space-2); }
 .warning-text { color: var(--color-warning-text); }

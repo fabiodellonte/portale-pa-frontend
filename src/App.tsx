@@ -34,12 +34,15 @@ type NotificationKind = 'status' | 'update' | 'assignment';
 type AppNotification = { id: string; kind: NotificationKind; title: string; body: string; timestamp: string; unread: boolean };
 type NotificationLoadState = 'idle' | 'loading' | 'ready' | 'fallback' | 'error';
 
-type Screen = 'login' | 'home' | 'wizard' | 'priorita' | 'dettaglio' | 'profilo' | 'notifiche' | 'docs';
+type Screen = 'login' | 'home' | 'wizard' | 'priorita' | 'dettaglio' | 'profilo' | 'notifiche' | 'docs' | 'about';
 type WizardStep = 1 | 2 | 3;
 type DevProfileKey = 'citizen_demo' | 'maintainer_demo' | 'admin_demo';
 type DevProfile = { key: DevProfileKey; label: string; userId: string; tenantId: string };
 
 const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:18080` });
+const appVersion = import.meta.env.VITE_APP_VERSION || __APP_VERSION__;
+const appBuildCommit = import.meta.env.VITE_APP_BUILD_COMMIT || __APP_BUILD_COMMIT__;
+const appBuildDate = import.meta.env.VITE_APP_BUILD_DATE || __APP_BUILD_DATE__;
 const defaultTenant = '00000000-0000-0000-0000-000000000001';
 const defaultUser = '00000000-0000-0000-0000-000000000111';
 const devProfiles: DevProfile[] = [
@@ -113,6 +116,10 @@ export default function App() {
   const [tenantName, setTenantName] = useState('Ente');
   const [demoSeedState, setDemoSeedState] = useState<DemoSeedState>('idle');
   const [demoSeedFeedback, setDemoSeedFeedback] = useState('');
+  const [bugReportTitle, setBugReportTitle] = useState('');
+  const [bugReportDescription, setBugReportDescription] = useState('');
+  const [bugReportState, setBugReportState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [bugReportFeedback, setBugReportFeedback] = useState('');
 
   const headers = useMemo(() => ({ 'x-user-id': userId, 'x-tenant-id': tenantId }), [tenantId, userId]);
   const isAdmin = (access?.portal_roles ?? []).includes('admin') || access?.portal_role === 'admin';
@@ -161,7 +168,7 @@ export default function App() {
   }, [aiAssistantInput, aiInsights]);
 
   const screenTitle = useMemo(() => ({
-    home: 'Home', wizard: 'Nuova segnalazione', priorita: 'Priorità', dettaglio: 'Dettaglio', profilo: 'Profilo', notifiche: 'Notifiche', docs: 'Documentazione pubblica'
+    home: 'Home', wizard: 'Nuova segnalazione', priorita: 'Priorità', dettaglio: 'Dettaglio', profilo: 'Profilo', notifiche: 'Notifiche', docs: 'Documentazione pubblica', about: 'Informazioni app'
   } as Record<Exclude<Screen, 'login'>, string>), []);
 
   useEffect(() => {
@@ -388,6 +395,38 @@ export default function App() {
     }
   };
 
+  const submitBugReport = async (e: FormEvent) => {
+    e.preventDefault();
+    if (bugReportTitle.trim().length < 3) {
+      setBugReportState('error');
+      setBugReportFeedback('Inserisci un titolo di almeno 3 caratteri.');
+      return;
+    }
+    if (bugReportDescription.trim().length < 10) {
+      setBugReportState('error');
+      setBugReportFeedback('Inserisci una descrizione di almeno 10 caratteri.');
+      return;
+    }
+
+    setBugReportState('loading');
+    setBugReportFeedback('Invio segnalazione bug in corso...');
+
+    try {
+      await api.post('/v1/bug-reports', {
+        title: bugReportTitle.trim(),
+        description: bugReportDescription.trim(),
+        page_url: window.location.href
+      }, { headers });
+      setBugReportState('success');
+      setBugReportFeedback('Bug report inviato correttamente. Grazie per la collaborazione.');
+      setBugReportTitle('');
+      setBugReportDescription('');
+    } catch {
+      setBugReportState('error');
+      setBugReportFeedback('Invio bug report non riuscito. Riprova tra qualche minuto.');
+    }
+  };
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
@@ -492,6 +531,22 @@ export default function App() {
             </ul>
             <h4>Accessi</h4>
             {userSettingsLinks.length > 0 ? <ul className="plain-list docs-list settings-links">{userSettingsLinks.map((link) => <li key={link.href}><a href={link.href}>{link.label}</a></li>)}</ul> : <p className="muted">Nessuna area amministrativa disponibile per il tuo profilo.</p>}
+
+            <form className="screen wizard-step" onSubmit={submitBugReport} aria-label="Invio bug report impostazioni">
+              <p className="eyebrow">Assistenza applicazione</p>
+              <h4>Segnala un bug</h4>
+              <p className="muted">Invia un report tecnico dal profilo: verrà inoltrato al team amministrativo dell'ente.</p>
+              <label>Titolo bug<Input aria-label="Titolo bug report" value={bugReportTitle} onChange={(e) => setBugReportTitle(e.target.value)} /></label>
+              <label>Descrizione bug<TextArea aria-label="Descrizione bug report" value={bugReportDescription} onChange={(e) => setBugReportDescription(e.target.value)} /></label>
+              {bugReportFeedback && <p className={bugReportState === 'error' ? 'error-text' : 'success-text'}>{bugReportFeedback}</p>}
+              <div className="row-actions">
+                <Button type="submit" variant="primary" disabled={bugReportState === 'loading'}>{bugReportState === 'loading' ? 'Invio...' : 'Invia bug report'}</Button>
+              </div>
+            </form>
+
+            <div className="inline-actions">
+              <Button type="button" onClick={() => setActiveScreen('about')}>Informazioni app</Button>
+            </div>
           </Card>
 
           <Card as="article" aria-label="Modalità test">
@@ -504,6 +559,24 @@ export default function App() {
             <div className="inline-actions"><Button type="button" onClick={() => setThemeMode((t) => t === 'light' ? 'dark' : 'light')}>Tema: {themeMode === 'light' ? 'Chiaro' : 'Scuro'}</Button></div>
             <p className="muted">Header API effettivi: x-user-id {userId} • x-tenant-id {tenantId}</p>
             {isAdmin && <section className="demo-mode-panel" aria-label="Modalità Test DB"><h4>Modalità Test DB</h4><p className="muted warning-text">⚠️ Solo sviluppo locale. Non abilitare in produzione. Flag richiesto: ENABLE_DEMO_MODE_SWITCH=true.</p><p className="muted">Stato corrente: <strong>{demoModeState === 'on' ? 'ON' : demoModeState === 'off' ? 'OFF' : 'SCONOSCIUTO'}</strong></p><div className="inline-actions"><Button type="button" onClick={() => switchDemoMode('on')} disabled={demoModeBusy || demoSeedState === 'loading'}>ON</Button><Button type="button" onClick={() => switchDemoMode('off')} disabled={demoModeBusy || demoSeedState === 'loading'}>OFF</Button><Button type="button" onClick={() => void loadFullDemoData()} disabled={demoModeBusy || demoSeedState === 'loading'}>{demoSeedState === 'loading' ? 'Caricamento...' : 'Carica dati demo completi'}</Button></div>{demoModeFeedback && <p className="success-text">{demoModeFeedback}</p>}{demoSeedFeedback && <p className={demoSeedState === 'error' ? 'error-text' : 'success-text'}>{demoSeedFeedback}</p>}{demoModeOutput && <p className="muted demo-mode-output">{demoModeOutput}</p>}</section>}
+          </Card>
+        </section>
+      )}
+
+      {activeScreen === 'about' && (
+        <section className="screen" data-testid="about-screen" aria-label="Informazioni applicazione">
+          <Card as="article" className="about-card">
+            <p className="eyebrow">Portale Istituzionale</p>
+            <h3>Informazioni applicazione</h3>
+            <p className="muted">Versione software e metadati build del Portale PA.</p>
+            <ul className="plain-list docs-list" aria-label="Dettagli versione applicazione">
+              <li><strong>Versione:</strong> <span data-testid="app-version">{appVersion}</span></li>
+              {appBuildCommit && <li><strong>Commit build:</strong> <code>{appBuildCommit}</code></li>}
+              {appBuildDate && <li><strong>Data build:</strong> {appBuildDate}</li>}
+            </ul>
+            <div className="inline-actions">
+              <Button type="button" onClick={() => setActiveScreen('profilo')}>Torna al profilo</Button>
+            </div>
           </Card>
         </section>
       )}

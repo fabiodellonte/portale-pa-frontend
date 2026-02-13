@@ -153,4 +153,16 @@ describe('Portale PA UX refinements', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Chiudi' }));
     expect(screen.queryByRole('dialog', { name: 'Ricerca segnalazioni' })).not.toBeInTheDocument();
   });
+
+  it('navigates to About screen from profile and shows build version metadata', async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    await userEvent.click(screen.getByLabelText('Profilo'));
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Informazioni app' }));
+
+    expect(await screen.findByTestId('about-screen')).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Dettagli versione applicazione' })).toBeInTheDocument();
+    expect(screen.getByTestId('app-version')).toHaveTextContent(__APP_VERSION__);
+  });
 });
