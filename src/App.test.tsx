@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getMock, postMock } = vi.hoisted(() => ({
   getMock: vi.fn(),
@@ -20,10 +20,18 @@ vi.mock('axios', () => ({
 
 import App from './App';
 
-function primeAccess(accessData: Record<string, unknown>) {
-  getMock.mockImplementation((url: string) => {
+const accessByUser: Record<string, { portal_role: 'citizen' | 'maintainer' | 'admin'; portal_roles: Array<'citizen' | 'maintainer' | 'admin'> }> = {
+  '00000000-0000-0000-0000-000000000111': { portal_role: 'citizen', portal_roles: ['citizen'] },
+  '00000000-0000-0000-0000-000000000222': { portal_role: 'maintainer', portal_roles: ['maintainer', 'citizen'] },
+  '00000000-0000-0000-0000-000000000333': { portal_role: 'admin', portal_roles: ['admin', 'maintainer', 'citizen'] }
+};
+
+function primeAccess() {
+  getMock.mockImplementation((url: string, config?: { headers?: Record<string, string> }) => {
+    const userId = config?.headers?.['x-user-id'] ?? '00000000-0000-0000-0000-000000000111';
+    const tenantId = config?.headers?.['x-tenant-id'] ?? '00000000-0000-0000-0000-000000000001';
     if (url === '/v1/me/preferences') return Promise.resolve({ data: { language: 'it' } });
-    if (url === '/v1/me/access') return Promise.resolve({ data: accessData });
+    if (url === '/v1/me/access') return Promise.resolve({ data: { user_id: userId, tenant_id: tenantId, ...(accessByUser[userId] ?? accessByUser['00000000-0000-0000-0000-000000000111']) } });
     if (url.includes('/branding')) return Promise.resolve({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } });
     if (url === '/v1/docs/public') return Promise.resolve({ data: { global: [], tenant: [] } });
     if (url === '/v1/segnalazioni') return Promise.resolve({ data: { items: [] } });
@@ -35,7 +43,12 @@ describe('Portale PA mobile dettaglio', () => {
   beforeEach(() => {
     getMock.mockReset();
     postMock.mockReset();
-    primeAccess({ portal_role: 'citizen', portal_roles: ['citizen'] });
+    vi.stubEnv('VITE_DEV_PROFILE_SWITCH', 'false');
+    primeAccess();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('hides bottom nav before authentication and keeps direct dashboard login flow', async () => {
@@ -48,30 +61,41 @@ describe('Portale PA mobile dettaglio', () => {
     expect(screen.getByRole('navigation', { name: 'Navigazione mobile' })).toBeInTheDocument();
   });
 
-  it('shows no admin links in user settings for citizen role', async () => {
+  it('keeps dev profile switcher hidden by default', async () => {
     render(<App />);
-    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    expect(screen.queryByTestId('dev-profile-switcher')).not.toBeInTheDocument();
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+  });
 
+  it('switches demo profile and uses selected headers for /v1/me/access', async () => {
+    vi.stubEnv('VITE_DEV_PROFILE_SWITCH', 'true');
+    render(<App />);
+
+    const profileSelect = await screen.findByLabelText('Profilo sviluppo');
+    getMock.mockClear();
+
+    await userEvent.selectOptions(profileSelect, 'admin_demo');
+
+    await waitFor(() => {
+      expect(getMock).toHaveBeenCalledWith('/v1/me/access', expect.objectContaining({ headers: expect.objectContaining({
+        'x-user-id': '00000000-0000-0000-0000-000000000333',
+        'x-tenant-id': '00000000-0000-0000-0000-000000000001'
+      }) }));
+    });
+  });
+
+  it('renders role-aware links based on selected demo profile', async () => {
+    vi.stubEnv('VITE_DEV_PROFILE_SWITCH', 'true');
+    render(<App />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
     expect(await screen.findByText('Nessuna area amministrativa disponibile per il tuo profilo.')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Apri area amministrazione' })).not.toBeInTheDocument();
-  });
 
-  it('shows maintainer links for own tenant in user settings', async () => {
-    primeAccess({ tenant_id: 'tenant-001', portal_role: 'maintainer', portal_roles: ['maintainer', 'citizen'] });
-    render(<App />);
-    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    await userEvent.selectOptions(screen.getByLabelText('Profilo sviluppo'), 'maintainer_demo');
+    expect(await screen.findByRole('link', { name: 'Area maintainer • tenant 00000000-0000-0000-0000-000000000001' })).toHaveAttribute('href', '/maintainer?tenant_id=00000000-0000-0000-0000-000000000001');
 
-    expect(await screen.findByRole('link', { name: 'Area maintainer • tenant tenant-001' })).toHaveAttribute('href', '/maintainer?tenant_id=tenant-001');
-  });
-
-  it('shows admin links to admin/maintainer/citizen views in user settings', async () => {
-    primeAccess({ tenant_id: 'tenant-001', portal_role: 'admin', portal_roles: ['admin', 'maintainer', 'citizen'] });
-    render(<App />);
-    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
-
-    expect(await screen.findByRole('link', { name: 'Apri area amministrazione' })).toHaveAttribute('href', '/admin?tenant_id=tenant-001');
-    expect(screen.getByRole('link', { name: 'Accedi come maintainer' })).toHaveAttribute('href', '/maintainer?tenant_id=tenant-001&view_as=maintainer');
-    expect(screen.getByRole('link', { name: 'Accedi come cittadino' })).toHaveAttribute('href', '/dashboard?tenant_id=tenant-001&view_as=citizen');
+    await userEvent.selectOptions(screen.getByLabelText('Profilo sviluppo'), 'admin_demo');
+    expect(await screen.findByRole('link', { name: 'Apri area amministrazione' })).toHaveAttribute('href', '/admin?tenant_id=00000000-0000-0000-0000-000000000001');
   });
 
   it('keeps deterministic duplicate-search normalization contract', () => {

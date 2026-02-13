@@ -32,10 +32,23 @@ type Segnalazione = {
 
 type Screen = 'login' | 'home' | 'wizard' | 'priorita' | 'dettaglio';
 type WizardStep = 1 | 2 | 3;
+type DevProfileKey = 'citizen_demo' | 'maintainer_demo' | 'admin_demo';
+
+type DevProfile = {
+  key: DevProfileKey;
+  label: string;
+  userId: string;
+  tenantId: string;
+};
 
 const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:18080` });
 const defaultTenant = '00000000-0000-0000-0000-000000000001';
 const defaultUser = '00000000-0000-0000-0000-000000000111';
+const devProfiles: DevProfile[] = [
+  { key: 'citizen_demo', label: 'citizen_demo', userId: '00000000-0000-0000-0000-000000000111', tenantId: defaultTenant },
+  { key: 'maintainer_demo', label: 'maintainer_demo', userId: '00000000-0000-0000-0000-000000000222', tenantId: defaultTenant },
+  { key: 'admin_demo', label: 'admin_demo', userId: '00000000-0000-0000-0000-000000000333', tenantId: defaultTenant }
+];
 
 const prioritiesMock = [
   { titolo: 'Sicurezza attraversamento scuola', trend: '+12%', supporti: 189, categoria: 'Viabilità' },
@@ -51,8 +64,10 @@ function getSearchString(v: string) {
 }
 
 export default function App() {
+  const devProfileSwitchEnabled = import.meta.env.DEV && import.meta.env.VITE_DEV_PROFILE_SWITCH === 'true';
   const [tenantId, setTenantId] = useState(defaultTenant);
   const [userId, setUserId] = useState(defaultUser);
+  const [selectedDevProfile, setSelectedDevProfile] = useState<DevProfileKey>('citizen_demo');
   const [access, setAccess] = useState<Access | null>(null);
   const [branding, setBranding] = useState<Branding>({ primary_color: '#0055A4', secondary_color: '#FFFFFF' });
   const [publicDocs, setPublicDocs] = useState<{ global: Doc[]; tenant: Doc[] }>({ global: [], tenant: [] });
@@ -107,8 +122,6 @@ export default function App() {
           api.get('/v1/docs/public', { headers })
         ]);
         const next = acc.data ?? {};
-        setUserId(next.user_id ?? userId);
-        setTenantId(next.tenant_id ?? tenantId);
         setAccess(next);
         setBranding(brand.data);
         setPublicDocs(docs.data ?? { global: [], tenant: [] });
@@ -137,6 +150,15 @@ export default function App() {
 
   const openWizard = () => {
     setWizardStep(1); setWizardError(''); setWizardTitle(''); setWizardDescription(''); setWizardAddress(''); setWizardTags(''); setWizardDuplicateOf(''); setDuplicateCandidates([]); setDuplicateMode(null); setActiveScreen('wizard');
+  };
+
+  const onDevProfileChange = (profileKey: DevProfileKey) => {
+    const profile = devProfiles.find((item) => item.key === profileKey);
+    if (!profile) return;
+    setSelectedDevProfile(profileKey);
+    setUserId(profile.userId);
+    setTenantId(profile.tenantId);
+    setAccess(null);
   };
 
   const checkDuplicates = async () => {
@@ -186,6 +208,7 @@ export default function App() {
 
   return (
     <main className="mobile-shell">
+      {devProfileSwitchEnabled && <section className="card" data-testid="dev-profile-switcher"><p className="eyebrow">Dev profile switch</p><label>Profilo simulato<select aria-label="Profilo sviluppo" value={selectedDevProfile} onChange={(e) => onDevProfileChange(e.target.value as DevProfileKey)}>{devProfiles.map((profile) => <option key={profile.key} value={profile.key}>{profile.label}</option>)}</select></label><p className="muted">Header API effettivi: x-user-id {userId} • x-tenant-id {tenantId}</p></section>}
       {activeScreen === 'login' && <section className="screen card institutional-login"><p className="eyebrow">Portale Istituzionale Segnalazioni</p><h1>Accedi con identità digitale</h1><p className="muted">Servizio comunale per segnalazioni, priorità e aggiornamenti sul territorio.</p><div className="spid-card"><strong>SPID / CIE</strong><p>Autenticazione sicura per cittadini e operatori.</p><button type="button" onClick={() => setActiveScreen('home')}>Entra con SPID</button></div></section>}
 
       {activeScreen === 'home' && <section className="screen home-screen"><header className="card welcome"><p className="eyebrow">Comune di riferimento</p><h2>Benvenuto nel portale segnalazioni</h2><p className="muted">Consulta aggiornamenti, crea nuove segnalazioni e monitora lo stato delle tue richieste.</p><button type="button" className="primary" onClick={openWizard}>Crea segnalazione</button></header><article className="card"><h3>In evidenza</h3>{homeError && <p className="muted">{homeError}</p>}<div className="horizontal-list">{featuredItems.map((i) => <div key={i.title} className="feature-card"><span>{i.badge}</span><strong>{i.title}</strong><p>{i.text}</p></div>)}</div></article><article className="card"><h3>Le mie segnalazioni</h3><ul className="plain-list">{myReports.map((r) => <li key={r.id}><div><strong>{r.titolo}</strong><p>{r.id} • {r.stato}</p></div><small>{r.supporti} supporti</small></li>)}</ul></article><article className="card"><h3>Documentazione pubblica</h3><ul className="plain-list docs-list">{[...(publicDocs.global ?? []), ...(publicDocs.tenant ?? [])].map((d) => <li key={d.slug}>{d.title}</li>)}</ul></article><article className="card"><h3>Impostazioni utente</h3><p className="muted">Gestione profilo e accessi al portale.</p>{userSettingsLinks.length > 0 ? <ul className="plain-list docs-list settings-links">{userSettingsLinks.map((link) => <li key={link.href}><a href={link.href}>{link.label}</a></li>)}</ul> : <p className="muted">Nessuna area amministrativa disponibile per il tuo profilo.</p>}</article></section>}
