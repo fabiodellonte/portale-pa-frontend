@@ -9,7 +9,7 @@ import { Input, TextArea } from './components/ui/Input';
 import { THEME_STORAGE_KEY, ThemeMode, applyTheme, getInitialTheme } from './theme/tokens';
 
 type PortalRole = 'admin' | 'maintainer' | 'citizen';
-type Access = { user_id?: string; tenant_id?: string; tenant_ids?: string[]; portal_role?: PortalRole; portal_roles?: PortalRole[] };
+type Access = { user_id?: string; tenant_id?: string; tenant_ids?: string[]; portal_role?: PortalRole; portal_roles?: PortalRole[]; avatar_url?: string | null };
 type Branding = { primary_color: string; secondary_color: string; logo_url?: string | null };
 type Doc = { slug: string; title: string };
 type Segnalazione = {
@@ -121,6 +121,11 @@ export default function App() {
   const [bugReportDescription, setBugReportDescription] = useState('');
   const [bugReportState, setBugReportState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [bugReportFeedback, setBugReportFeedback] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarUploadState, setAvatarUploadState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [avatarFeedback, setAvatarFeedback] = useState('');
 
   const headers = useMemo(() => ({ 'x-user-id': userId, 'x-tenant-id': tenantId }), [tenantId, userId]);
   const isAdmin = (access?.portal_roles ?? []).includes('admin') || access?.portal_role === 'admin';
@@ -175,20 +180,23 @@ export default function App() {
   useEffect(() => {
     void (async () => {
       try {
-        const [, acc, brand, docs, tenantLabel] = await Promise.all([
+        const [, acc, brand, docs, tenantLabel, meAvatar] = await Promise.all([
           api.get('/v1/me/preferences', { headers }),
           api.get('/v1/me/access', { headers }),
           api.get(`/v1/tenants/${tenantId}/branding`, { headers }).catch(() => ({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } })),
           api.get('/v1/docs/public', { headers }),
-          api.get('/v1/me/tenant-label', { headers }).catch(() => ({ data: { tenant_name: 'Ente' } }))
+          api.get('/v1/me/tenant-label', { headers }).catch(() => ({ data: { tenant_name: 'Ente' } })),
+          api.get('/v1/me/avatar', { headers }).catch(() => ({ data: { avatar_url: null } }))
         ]);
         setAccess(acc.data ?? {});
         setBranding(brand.data);
         setPublicDocs(docs.data ?? { global: [], tenant: [] });
         setTenantName(String(tenantLabel.data?.tenant_name ?? 'Ente'));
+        setAvatarUrl(String(meAvatar.data?.avatar_url ?? '') || null);
       } catch {
         setPublicDocs({ global: [], tenant: [] });
         setTenantName('Ente');
+        setAvatarUrl(null);
       }
     })();
   }, [headers, tenantId, userId]);
@@ -428,6 +436,50 @@ export default function App() {
     }
   };
 
+  const onAvatarFileChange = (file?: File | null) => {
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setAvatarUploadState('error');
+      setAvatarFeedback('Formato non supportato. Usa PNG, JPG o WEBP.');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setAvatarUploadState('error');
+      setAvatarFeedback('File troppo grande (max 2MB).');
+      return;
+    }
+
+    setAvatarFile(file);
+    setAvatarUploadState('idle');
+    setAvatarFeedback('');
+    const reader = new FileReader();
+    reader.onload = () => setAvatarPreview(typeof reader.result === 'string' ? reader.result : null);
+    reader.readAsDataURL(file);
+  };
+
+  const saveAvatar = async () => {
+    if (!avatarFile || !avatarPreview) return;
+    const [, base64 = ''] = avatarPreview.split(',');
+    if (!base64) return;
+
+    setAvatarUploadState('loading');
+    setAvatarFeedback('Caricamento avatar in corso...');
+    try {
+      const response = await api.post('/v1/me/avatar', {
+        filename: avatarFile.name,
+        mime_type: avatarFile.type,
+        content_base64: base64
+      }, { headers });
+      const nextUrl = String(response.data?.avatar_url ?? '');
+      setAvatarUrl(nextUrl || avatarPreview);
+      setAvatarUploadState('success');
+      setAvatarFeedback('Avatar aggiornato con successo.');
+    } catch {
+      setAvatarUploadState('error');
+      setAvatarFeedback('Caricamento avatar non riuscito.');
+    }
+  };
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
@@ -476,7 +528,11 @@ export default function App() {
             <button type="button" aria-label="Cerca" className="icon-btn" onClick={() => setIsSearchOpen(true)}><OutlineIcon paths="M11 4a7 7 0 1 0 4.95 11.95l4.05 4.05 1.4-1.4-4.05-4.05A7 7 0 0 0 11 4Z" /></button>
             <button type="button" aria-label="Documentazione pubblica" className="icon-btn" onClick={() => setActiveScreen('docs')}><OutlineIcon className="topbar-icon topbar-icon--info" paths={["M12 10.2v6.2", "M12 7.2h.01", "M4.8 12a7.2 7.2 0 1 0 14.4 0 7.2 7.2 0 0 0-14.4 0Z"]} /></button>
             <button type="button" aria-label="Notifiche" className="icon-btn" onClick={() => setActiveScreen('notifiche')}><OutlineIcon paths={["M12 4a4 4 0 0 0-4 4v2.5c0 .9-.3 1.8-.9 2.5L6 14.5h12L16.9 13c-.6-.7-.9-1.6-.9-2.5V8a4 4 0 0 0-4-4Z", "M10 18a2 2 0 0 0 4 0"]} />{unreadNotifications > 0 && <span className="icon-badge">{Math.min(unreadNotifications, 9)}</span>}</button>
-            <button type="button" aria-label="Profilo" className="icon-btn" onClick={() => setActiveScreen('profilo')}><OutlineIcon paths={["M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Z", "M12 14c-3.3 0-6 2.2-6 5h12c0-2.8-2.7-5-6-5Z"]} /></button>
+            <button type="button" aria-label="Profilo" className="icon-btn" onClick={() => setActiveScreen('profilo')}>
+              {avatarUrl
+                ? <img src={avatarUrl} alt="Avatar profilo" className="topbar-avatar" data-testid="topbar-avatar" />
+                : <OutlineIcon paths={["M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Z", "M12 14c-3.3 0-6 2.2-6 5h12c0-2.8-2.7-5-6-5Z"]} />}
+            </button>
           </div>
         </header>
       )}
@@ -530,6 +586,22 @@ export default function App() {
               <li><strong>Tenant ID:</strong> {tenantId}</li>
               <li><strong>Ruolo:</strong> {(access?.portal_role ?? 'citizen').toUpperCase()}</li>
             </ul>
+            <section aria-label="Avatar profilo" className="profile-avatar-panel">
+              <h4>Avatar profilo</h4>
+              <div className="inline-actions">
+                <img src={avatarPreview ?? avatarUrl ?? ''} alt="Anteprima avatar" className="profile-avatar-preview" style={{ display: avatarPreview || avatarUrl ? 'block' : 'none' }} />
+              </div>
+              <label>Carica immagine avatar
+                <input aria-label="Carica avatar" type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => onAvatarFileChange(e.target.files?.[0])} />
+              </label>
+              <div className="row-actions">
+                <Button type="button" variant="primary" onClick={() => void saveAvatar()} disabled={!avatarFile || avatarUploadState === 'loading'}>
+                  {avatarUploadState === 'loading' ? 'Salvataggio...' : 'Salva avatar'}
+                </Button>
+              </div>
+              {avatarFeedback && <p className={avatarUploadState === 'error' ? 'error-text' : 'success-text'}>{avatarFeedback}</p>}
+            </section>
+
             <h4>Accessi</h4>
             {userSettingsLinks.length > 0 ? <ul className="plain-list docs-list settings-links">{userSettingsLinks.map((link) => <li key={link.href}><a href={link.href}>{link.label}</a></li>)}</ul> : <p className="muted">Nessuna area amministrativa disponibile per il tuo profilo.</p>}
 

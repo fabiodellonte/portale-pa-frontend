@@ -37,6 +37,7 @@ function primeAccess() {
     if (url === '/v1/me/preferences') return Promise.resolve({ data: { language: 'it' } });
     if (url === '/v1/me/access') return Promise.resolve({ data: { user_id: userId, tenant_id: tenantId, ...(accessByUser[userId] ?? accessByUser['00000000-0000-0000-0000-000000000111']) } });
     if (url === '/v1/me/tenant-label') return Promise.resolve({ data: { tenant_name: 'Pesaro' } });
+    if (url === '/v1/me/avatar') return Promise.resolve({ data: { avatar_url: null } });
     if (url.includes('/branding')) return Promise.resolve({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } });
     if (url === '/v1/docs/public') return Promise.resolve({ data: { global: [{ slug: 'guida', title: 'Guida cittadino' }], tenant: [{ slug: 'regole', title: 'Regole comunali' }] } });
     if (url === '/v1/segnalazioni') return Promise.resolve({ data: { items: [{ id: 's1', codice: 'SGN-001', titolo: 'Buca via Roma', stato: 'in_attesa', descrizione: 'Test', priorita: 'alta', severita: 'alta', address: 'Via Roma 24', created_by: userId }, { id: 's2', codice: 'SGN-002', titolo: 'Lampione spento', stato: 'presa_in_carico', descrizione: 'Test 2', priorita: 'media', severita: 'media', address: 'Piazza Municipio 1', created_by: userId }] } });
@@ -67,6 +68,9 @@ describe('Portale PA UX refinements', () => {
       if (url === '/v1/admin/demo-seed/full') {
         if (demoSeedShouldFail) return Promise.reject(new Error('seed disabled'));
         return Promise.resolve({ data: { ok: true, message: 'Dataset demo completo caricato con successo.' } });
+      }
+      if (url === '/v1/me/avatar') {
+        return Promise.resolve({ data: { avatar_url: '/public/avatars/uploaded-test.png' } });
       }
       return Promise.resolve({ data: {} });
     });
@@ -123,6 +127,26 @@ describe('Portale PA UX refinements', () => {
     expect(screen.getByLabelText('Titolo bug report')).toBeInTheDocument();
     expect(screen.getByLabelText('Descrizione bug report')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Invia bug report' })).toBeInTheDocument();
+  });
+
+  it('uploads avatar from profile and updates topbar avatar render', async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    await userEvent.click(screen.getByLabelText('Profilo'));
+
+    const file = new File(['avatar'], 'avatar.png', { type: 'image/png' });
+    await userEvent.upload(await screen.findByLabelText('Carica avatar'), file);
+
+    expect(await screen.findByAltText('Anteprima avatar')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Salva avatar' }));
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/v1/me/avatar', expect.objectContaining({
+      filename: 'avatar.png',
+      mime_type: 'image/png',
+      content_base64: expect.any(String)
+    }), expect.any(Object)));
+
+    expect(await screen.findByTestId('topbar-avatar')).toBeInTheDocument();
   });
 
   it('submits bug report from profile settings using existing endpoint', async () => {
