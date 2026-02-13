@@ -436,9 +436,21 @@ export default function App() {
     }
   };
 
+  const normalizeAvatarMimeType = (file: File) => {
+    const rawType = (file.type || '').toLowerCase();
+    if (rawType === 'image/jpg' || rawType === 'image/pjpeg') return 'image/jpeg';
+    if (['image/png', 'image/jpeg', 'image/webp'].includes(rawType)) return rawType;
+    const filename = file.name.toLowerCase();
+    if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) return 'image/jpeg';
+    if (filename.endsWith('.png')) return 'image/png';
+    if (filename.endsWith('.webp')) return 'image/webp';
+    return '';
+  };
+
   const onAvatarFileChange = (file?: File | null) => {
     if (!file) return;
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+    const mimeType = normalizeAvatarMimeType(file);
+    if (!mimeType) {
       setAvatarUploadState('error');
       setAvatarFeedback('Formato non supportato. Usa PNG, JPG o WEBP.');
       return;
@@ -462,12 +474,19 @@ export default function App() {
     const [, base64 = ''] = avatarPreview.split(',');
     if (!base64) return;
 
+    const mimeType = normalizeAvatarMimeType(avatarFile);
+    if (!mimeType) {
+      setAvatarUploadState('error');
+      setAvatarFeedback('Formato non supportato. Usa PNG, JPG o WEBP.');
+      return;
+    }
+
     setAvatarUploadState('loading');
     setAvatarFeedback('Caricamento avatar in corso...');
     try {
       const response = await api.post('/v1/me/avatar', {
         filename: avatarFile.name,
-        mime_type: avatarFile.type,
+        mime_type: mimeType,
         content_base64: base64
       }, { headers });
       const nextUrl = String(response.data?.avatar_url ?? '');
@@ -592,7 +611,7 @@ export default function App() {
                 <img src={avatarPreview ?? avatarUrl ?? ''} alt="Anteprima avatar" className="profile-avatar-preview" style={{ display: avatarPreview || avatarUrl ? 'block' : 'none' }} />
               </div>
               <label>Carica immagine avatar
-                <input aria-label="Carica avatar" type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => onAvatarFileChange(e.target.files?.[0])} />
+                <input aria-label="Carica avatar" type="file" accept="image/png,image/jpeg,image/jpg,image/pjpeg,image/webp,.png,.jpg,.jpeg,.webp" onChange={(e) => onAvatarFileChange(e.target.files?.[0])} />
               </label>
               <div className="row-actions">
                 <Button type="button" variant="primary" onClick={() => void saveAvatar()} disabled={!avatarFile || avatarUploadState === 'loading'}>
