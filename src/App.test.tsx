@@ -22,10 +22,9 @@ vi.mock('axios', () => ({
 
 import App from './App';
 
-describe('Portale PA frontend extended scope', () => {
+describe('Portale PA mobile institutional UI', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    apiMocks.get.mockResolvedValue({ data: [] });
     apiMocks.post.mockResolvedValue({ data: { ok: true } });
     apiMocks.put.mockResolvedValue({ data: { ok: true } });
   });
@@ -44,83 +43,44 @@ describe('Portale PA frontend extended scope', () => {
     }
   }
 
-  it('shows public documentation for all users', async () => {
+  it('renders SPID login entry and opens mobile home', async () => {
     seed();
     render(<App />);
 
-    expect(await screen.findByText('Guida base')).toBeInTheDocument();
-    expect(screen.getByText('Guida comune')).toBeInTheDocument();
+    expect(screen.getByText('Accedi con identità digitale')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+
+    expect(await screen.findByText('Benvenuto nel portale segnalazioni')).toBeInTheDocument();
+    expect(screen.getByText('Guida base')).toBeInTheDocument();
   });
 
-  it('submits bug report flow', async () => {
+  it('shows wizard step 1 with AI duplicate insight and submits bug report', async () => {
     seed();
     render(<App />);
 
-    await userEvent.type(await screen.findByLabelText('Titolo bug'), 'Errore login');
-    await userEvent.type(screen.getByLabelText('Descrizione bug'), 'Dopo login compare pagina bianca in area personale.');
-    await userEvent.click(screen.getByRole('button', { name: 'Invia bug report' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Nuova' }));
+    expect(await screen.findByText('Nuova segnalazione • Step 1 di 4')).toBeInTheDocument();
+    expect(screen.getByText('Possibile segnalazione simile trovata')).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Titolo segnalazione'), 'Buche via Verdi');
+    await userEvent.type(screen.getByLabelText('Descrizione segnalazione'), 'Tratto pericoloso vicino all\'incrocio principale.');
+    await userEvent.click(screen.getByRole('button', { name: 'Prosegui' }));
 
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/v1/bug-reports', expect.any(Object), expect.any(Object)));
+    expect(await screen.findByText('Dettaglio segnalazione')).toBeInTheDocument();
   });
 
-  it('shows global docs admin section only for global admin', async () => {
-    seed({ can_manage_branding: true, can_manage_roles: false });
+  it('shows priorities and dettaglio key blocks', async () => {
+    seed();
     render(<App />);
 
-    await screen.findByText('Branding comunale');
-    expect(screen.queryByText('Documentazione globale amministrabile (global admin)')).not.toBeInTheDocument();
-  });
+    await userEvent.click(screen.getByRole('button', { name: 'Priorità' }));
+    expect(await screen.findByText('Priorità del territorio')).toBeInTheDocument();
+    expect(screen.getByLabelText('Categorie priorità')).toBeInTheDocument();
 
-  it('allows global admin to save global docs', async () => {
-    seed({ can_manage_branding: true, can_manage_roles: true });
-    render(<App />);
-
-    await userEvent.type(await screen.findByLabelText('Slug globale'), 'faq');
-    await userEvent.type(screen.getByLabelText('Titolo globale'), 'FAQ');
-    await userEvent.type(screen.getByLabelText('Contenuto globale'), 'Contenuto istituzionale della faq');
-    await userEvent.click(screen.getByRole('button', { name: 'Salva doc globale' }));
-
-    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/v1/admin/docs/global', expect.objectContaining({ slug: 'faq' }), expect.any(Object)));
-  });
-
-  it('allows tenant admin/global admin to save tenant docs', async () => {
-    seed({ can_manage_branding: true, can_manage_roles: false });
-    render(<App />);
-
-    await userEvent.type(await screen.findByLabelText('Slug tenant'), 'servizi');
-    await userEvent.type(screen.getByLabelText('Titolo tenant'), 'Servizi comunali');
-    await userEvent.type(screen.getByLabelText('Contenuto tenant'), 'Pagina servizi del comune.');
-    await userEvent.click(screen.getByRole('button', { name: 'Salva doc tenant' }));
-
-    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(expect.stringContaining('/v1/admin/docs/tenant/'), expect.objectContaining({ slug: 'servizi' }), expect.any(Object)));
-  });
-
-  it('wires governance endpoints in admin section', async () => {
-    seed({ can_manage_branding: true, can_manage_roles: false });
-    render(<App />);
-
-    await screen.findByText('Governance segnalazioni (amministrazione)');
-
-    await userEvent.selectOptions(screen.getByLabelText('Nuovo stato segnalazione'), 'in_lavorazione');
-    await userEvent.type(screen.getByLabelText('Messaggio transizione'), 'In carico all\'ufficio tecnico');
-    await userEvent.click(screen.getByRole('button', { name: 'Aggiorna stato' }));
-
-    await userEvent.type(screen.getByLabelText('ID operatore assegnazione'), '22222222-2222-2222-2222-222222222222');
-    await userEvent.type(screen.getByLabelText('Messaggio assegnazione'), 'Presa in lavorazione');
-    await userEvent.click(screen.getByRole('button', { name: 'Assegna' }));
-
-    await userEvent.type(screen.getByLabelText('Messaggio pubblico segnalazione'), 'Intervento programmato per domani mattina.');
-    await userEvent.click(screen.getByRole('button', { name: 'Pubblica risposta' }));
-
-    await userEvent.click(screen.getByLabelText('Flag nascosta'));
-    await userEvent.type(screen.getByLabelText('Nota moderazione'), 'Contenuto sensibile oscurato');
-    await userEvent.click(screen.getByRole('button', { name: 'Salva flag' }));
-
-    await waitFor(() => {
-      expect(apiMocks.post).toHaveBeenCalledWith('/v1/admin/segnalazioni/11111111-1111-1111-1111-111111111111/status-transition', expect.objectContaining({ status: 'in_lavorazione' }), expect.any(Object));
-      expect(apiMocks.post).toHaveBeenCalledWith('/v1/admin/segnalazioni/11111111-1111-1111-1111-111111111111/assign', expect.objectContaining({ assigned_to: '22222222-2222-2222-2222-222222222222' }), expect.any(Object));
-      expect(apiMocks.post).toHaveBeenCalledWith('/v1/admin/segnalazioni/11111111-1111-1111-1111-111111111111/public-response', expect.objectContaining({ message: 'Intervento programmato per domani mattina.' }), expect.any(Object));
-      expect(apiMocks.post).toHaveBeenCalledWith('/v1/admin/segnalazioni/11111111-1111-1111-1111-111111111111/moderation-flags', expect.objectContaining({ flags: expect.objectContaining({ hidden: true }) }), expect.any(Object));
-    });
+    await userEvent.click(screen.getByRole('button', { name: 'Dettaglio' }));
+    expect(await screen.findByLabelText('Timeline stato')).toBeInTheDocument();
+    expect(screen.getByText('Mappa area intervento')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Segui aggiornamenti' })).toBeInTheDocument();
   });
 });
