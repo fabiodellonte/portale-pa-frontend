@@ -1,21 +1,14 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 
-type Access = {
-  user_id?: string;
-  tenant_id?: string;
-  roles?: string[];
-  can_manage_branding?: boolean;
-  can_manage_roles?: boolean;
-};
-
-type Branding = { logo_url?: string | null; primary_color: string; secondary_color: string };
-type Doc = { id?: string; slug: string; title: string; content_md: string; is_published?: boolean; sort_order?: number };
-type GovernanceItem = { id: string; titolo?: string };
+type Access = { user_id?: string; tenant_id?: string; can_manage_branding?: boolean; can_manage_roles?: boolean };
+type Branding = { primary_color: string; secondary_color: string; logo_url?: string | null };
+type Doc = { slug: string; title: string };
 type Segnalazione = {
   id?: string;
   codice?: string;
   titolo?: string;
+  descrizione?: string;
   stato?: string;
   created_by?: string;
   reported_by?: string;
@@ -25,19 +18,13 @@ type Segnalazione = {
   supporti?: number;
   metadata?: Record<string, unknown>;
   updated_at?: string;
-};
-type PublicMetrics = {
-  total_segnalazioni?: number;
-  total_votes?: number;
-  total_follows?: number;
-  by_status?: Record<string, number>;
+  timeline?: Array<{ id?: string; message?: string; event_type?: string; created_at?: string }>;
 };
 
 type Screen = 'login' | 'home' | 'wizard' | 'priorita' | 'dettaglio';
+type WizardStep = 1 | 2 | 3;
 
-const resolvedApiBase = import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:18080`;
-const api = axios.create({ baseURL: resolvedApiBase });
-
+const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:18080` });
 const defaultTenant = '00000000-0000-0000-0000-000000000001';
 const defaultUser = '00000000-0000-0000-0000-000000000111';
 
@@ -48,71 +35,55 @@ const prioritiesMock = [
 ];
 
 function statoLabel(stato?: string) {
-  if (!stato) return 'In lavorazione';
-  return stato.replaceAll('_', ' ').replace(/^./, (char) => char.toUpperCase());
+  return stato ? stato.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase()) : 'In lavorazione';
 }
-
-function supportiDaSegnalazione(item: Segnalazione) {
-  if (typeof item.votes_count === 'number') return item.votes_count;
-  if (typeof item.supporti === 'number') return item.supporti;
-  const metadataVotes = item.metadata?.votes_count;
-  return typeof metadataVotes === 'number' ? metadataVotes : 0;
-}
-
-function segnalazioneIsMine(item: Segnalazione, userId: string) {
-  return item.created_by === userId || item.reported_by === userId || item.user_id === userId || item.author_id === userId;
+function getSearchString(v: string) {
+  return v.toLowerCase().replace(/[^a-z0-9àèéìòù\s]/gi, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 4).join(' ');
 }
 
 export default function App() {
   const [tenantId, setTenantId] = useState(defaultTenant);
   const [userId, setUserId] = useState(defaultUser);
-  const [language, setLanguage] = useState<'it' | 'en'>('it');
   const [access, setAccess] = useState<Access | null>(null);
   const [branding, setBranding] = useState<Branding>({ primary_color: '#0055A4', secondary_color: '#FFFFFF' });
-  const [bugTitle, setBugTitle] = useState('');
-  const [bugDescription, setBugDescription] = useState('');
   const [publicDocs, setPublicDocs] = useState<{ global: Doc[]; tenant: Doc[] }>({ global: [], tenant: [] });
-  const [globalDoc, setGlobalDoc] = useState<Doc>({ slug: '', title: '', content_md: '' });
-  const [tenantDoc, setTenantDoc] = useState<Doc>({ slug: '', title: '', content_md: '' });
-  const [governanceItems, setGovernanceItems] = useState<GovernanceItem[]>([]);
-  const [governanceStatus, setGovernanceStatus] = useState('in_lavorazione');
-  const [governanceStatusMsg, setGovernanceStatusMsg] = useState('');
-  const [assignedTo, setAssignedTo] = useState('');
-  const [assignMsg, setAssignMsg] = useState('');
-  const [publicResponse, setPublicResponse] = useState('');
-  const [flagHidden, setFlagHidden] = useState(false);
-  const [flagAbusive, setFlagAbusive] = useState(false);
-  const [flagRequiresReview, setFlagRequiresReview] = useState(false);
-  const [flagDuplicateOf, setFlagDuplicateOf] = useState('');
-  const [moderationNote, setModerationNote] = useState('');
-  const [activeScreen, setActiveScreen] = useState<Screen>('login');
 
-  const [homeLoading, setHomeLoading] = useState(true);
-  const [homeError, setHomeError] = useState('');
+  const [activeScreen, setActiveScreen] = useState<Screen>('login');
   const [featuredItems, setFeaturedItems] = useState<Array<{ title: string; text: string; badge: string }>>([]);
   const [myReports, setMyReports] = useState<Array<{ id: string; titolo: string; stato: string; supporti: number }>>([]);
-  const [metrics, setMetrics] = useState<PublicMetrics | null>(null);
+  const [homeError, setHomeError] = useState('');
+
+  const [wizardStep, setWizardStep] = useState<WizardStep>(1);
+  const [wizardTitle, setWizardTitle] = useState('');
+  const [wizardDescription, setWizardDescription] = useState('');
+  const [wizardAddress, setWizardAddress] = useState('');
+  const [wizardTags, setWizardTags] = useState('');
+  const [wizardDuplicateOf, setWizardDuplicateOf] = useState('');
+  const [wizardError, setWizardError] = useState('');
+  const [wizardLoading, setWizardLoading] = useState(false);
+  const [duplicateMode, setDuplicateMode] = useState<'endpoint' | 'fallback' | null>(null);
+  const [duplicateCandidates, setDuplicateCandidates] = useState<Segnalazione[]>([]);
+
+  const [detail, setDetail] = useState<Segnalazione | null>(null);
 
   const headers = useMemo(() => ({ 'x-user-id': userId, 'x-tenant-id': tenantId }), [tenantId, userId]);
 
   useEffect(() => {
     void (async () => {
       try {
-        const [prefRes, accessRes, brandingRes, docsRes] = await Promise.all([
+        const [pref, acc, brand, docs] = await Promise.all([
           api.get('/v1/me/preferences', { headers }),
           api.get('/v1/me/access', { headers }),
-          api
-            .get(`/v1/tenants/${tenantId}/branding`, { headers })
-            .catch(() => ({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } })),
+          api.get(`/v1/tenants/${tenantId}/branding`, { headers }).catch(() => ({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } })),
           api.get('/v1/docs/public', { headers })
         ]);
-        setLanguage(prefRes.data.language ?? 'it');
-        const nextAccess = accessRes.data ?? {};
-        setAccess(nextAccess);
-        setUserId(nextAccess.user_id ?? userId);
-        setTenantId(nextAccess.tenant_id ?? tenantId);
-        setBranding(brandingRes.data);
-        setPublicDocs(docsRes.data ?? { global: [], tenant: [] });
+        const next = acc.data ?? {};
+        setUserId(next.user_id ?? userId);
+        setTenantId(next.tenant_id ?? tenantId);
+        setAccess(next);
+        setBranding(brand.data);
+        setPublicDocs(docs.data ?? { global: [], tenant: [] });
+        void pref;
       } catch {
         setPublicDocs({ global: [], tenant: [] });
       }
@@ -121,316 +92,86 @@ export default function App() {
 
   useEffect(() => {
     void (async () => {
-      setHomeLoading(true);
-      setHomeError('');
       try {
-        const [segnalazioniRes, metricsRes] = await Promise.all([
-          api.get('/v1/segnalazioni', {
-            headers,
-            params: { tenant_id: tenantId, page: 1, page_size: 50, sort: 'updated_at.desc' }
-          }),
-          api.get('/v1/public/metrics', {
-            headers,
-            params: { tenant_id: tenantId }
-          })
-        ]);
-
-        const allSegnalazioni = (segnalazioniRes.data?.items ?? []) as Segnalazione[];
-        setFeaturedItems(
-          allSegnalazioni.slice(0, 3).map((item) => ({
-            title: item.titolo ?? 'Segnalazione',
-            text: `Stato: ${statoLabel(item.stato)}${item.updated_at ? ` • Agg. ${new Date(item.updated_at).toLocaleDateString('it-IT')}` : ''}`,
-            badge: statoLabel(item.stato)
-          }))
-        );
-
-        setMyReports(
-          allSegnalazioni
-            .filter((item) => segnalazioneIsMine(item, userId))
-            .slice(0, 5)
-            .map((item) => ({
-              id: item.codice ?? item.id ?? 'SGN',
-              titolo: item.titolo ?? 'Segnalazione',
-              stato: statoLabel(item.stato),
-              supporti: supportiDaSegnalazione(item)
-            }))
-        );
-
-        setMetrics(metricsRes.data ?? null);
+        const segnalazioniRes = await api.get('/v1/segnalazioni', { headers, params: { tenant_id: tenantId, page: 1, page_size: 50, sort: 'updated_at.desc' } });
+        const all = (segnalazioniRes.data?.items ?? []) as Segnalazione[];
+        setFeaturedItems(all.slice(0, 3).map((i) => ({ title: i.titolo ?? 'Segnalazione', text: `Stato: ${statoLabel(i.stato)}`, badge: statoLabel(i.stato) })));
+        setMyReports(all.filter((i) => i.created_by === userId || i.reported_by === userId || i.user_id === userId || i.author_id === userId).map((i) => ({ id: i.id ?? i.codice ?? 'SGN', titolo: i.titolo ?? 'Segnalazione', stato: statoLabel(i.stato), supporti: i.votes_count ?? i.supporti ?? 0 })));      
+        setHomeError('');
       } catch {
         setHomeError('Al momento non è possibile caricare i dati aggiornati. Riprova più tardi.');
         setFeaturedItems([]);
         setMyReports([]);
-        setMetrics(null);
-      } finally {
-        setHomeLoading(false);
       }
     })();
   }, [headers, tenantId, userId]);
 
-  useEffect(() => {
-    if (!(access?.can_manage_branding || access?.can_manage_roles)) return;
-    void (async () => {
-      const listRes = await api.get('/v1/segnalazioni', {
-        headers,
-        params: { tenant_id: tenantId, page: 1, page_size: 20, sort: 'updated_at.desc' }
-      });
-      setGovernanceItems(listRes.data?.items ?? []);
-    })();
-  }, [access?.can_manage_branding, access?.can_manage_roles, headers, tenantId]);
-
-  const saveLanguage = async (e: FormEvent) => {
-    e.preventDefault();
-    await api.put('/v1/me/preferences/language', { language }, { headers });
-  };
-  const saveBranding = async (e: FormEvent) => {
-    e.preventDefault();
-    await api.put(`/v1/tenants/${tenantId}/branding`, branding, { headers });
-  };
-  const sendBug = async (e: FormEvent) => {
-    e.preventDefault();
-    await api.post('/v1/bug-reports', { title: bugTitle, description: bugDescription, page_url: window.location.href }, { headers });
-    setBugTitle('');
-    setBugDescription('');
-  };
-  const saveGlobalDoc = async (e: FormEvent) => {
-    e.preventDefault();
-    await api.post('/v1/admin/docs/global', { ...globalDoc, is_published: true, sort_order: 0 }, { headers });
-  };
-  const submitWizardStep = async (e: FormEvent) => {
-    await sendBug(e);
-    setActiveScreen('dettaglio');
-  };
-  const saveTenantDoc = async (e: FormEvent) => {
-    e.preventDefault();
-    await api.post(`/v1/admin/docs/tenant/${tenantId}`, { ...tenantDoc, is_published: true, sort_order: 0 }, { headers });
+  const openWizard = () => {
+    setWizardStep(1); setWizardError(''); setWizardTitle(''); setWizardDescription(''); setWizardAddress(''); setWizardTags(''); setWizardDuplicateOf(''); setDuplicateCandidates([]); setDuplicateMode(null); setActiveScreen('wizard');
   };
 
-  const firstGovernanceId = governanceItems[0]?.id;
-  const updateStatus = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!firstGovernanceId) return;
-    await api.post(
-      `/v1/admin/segnalazioni/${firstGovernanceId}/status-transition`,
-      { tenant_id: tenantId, status: governanceStatus, message: governanceStatusMsg || undefined },
-      { headers }
-    );
+  const checkDuplicates = async () => {
+    const search = getSearchString(wizardTitle);
+    try {
+      const r = await api.get('/v1/segnalazioni/duplicates', { headers, params: { tenant_id: tenantId, titolo: wizardTitle } });
+      setDuplicateCandidates((r.data?.items ?? []) as Segnalazione[]); setDuplicateMode('endpoint');
+    } catch {
+      const r = await api.get('/v1/segnalazioni', { headers, params: { tenant_id: tenantId, page: 1, page_size: 5, search, sort: 'updated_at.desc' } });
+      setDuplicateCandidates((r.data?.items ?? []) as Segnalazione[]); setDuplicateMode('fallback');
+    }
   };
-  const assignOperator = async (e: FormEvent) => {
+
+  const wizardStep1 = async (e: FormEvent) => {
     e.preventDefault();
-    if (!firstGovernanceId) return;
-    await api.post(
-      `/v1/admin/segnalazioni/${firstGovernanceId}/assign`,
-      { tenant_id: tenantId, assigned_to: assignedTo, message: assignMsg || undefined },
-      { headers }
-    );
+    if (wizardTitle.trim().length < 3) return setWizardError('Inserisci un titolo di almeno 3 caratteri.');
+    if (wizardDescription.trim().length < 10) return setWizardError('Inserisci una descrizione di almeno 10 caratteri.');
+    setWizardError(''); setWizardStep(2); await checkDuplicates();
   };
-  const publishResponse = async (e: FormEvent) => {
+
+  const submitWizard = async (e: FormEvent) => {
     e.preventDefault();
-    if (!firstGovernanceId) return;
-    await api.post(`/v1/admin/segnalazioni/${firstGovernanceId}/public-response`, { tenant_id: tenantId, message: publicResponse }, { headers });
-  };
-  const saveFlags = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!firstGovernanceId) return;
-    await api.post(
-      `/v1/admin/segnalazioni/${firstGovernanceId}/moderation-flags`,
-      {
+    if (wizardAddress.trim().length < 4) return setWizardError('Indica un indirizzo o riferimento dell’area (almeno 4 caratteri).');
+    setWizardLoading(true); setWizardError('');
+    try {
+      const create = await api.post('/v1/segnalazioni/wizard', {
         tenant_id: tenantId,
-        flags: {
-          hidden: flagHidden,
-          abusive: flagAbusive,
-          requires_review: flagRequiresReview,
-          duplicate_of: flagDuplicateOf || undefined,
-          note: moderationNote || undefined
-        }
-      },
-      { headers }
-    );
+        user_id: userId,
+        titolo: wizardTitle.trim(),
+        descrizione: wizardDescription.trim(),
+        address: wizardAddress.trim(),
+        tags: wizardTags.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 10),
+        metadata: { source: 'wizard_step4', duplicate_candidate_id: wizardDuplicateOf || undefined, duplicate_check_mode: duplicateMode ?? 'fallback_list' }
+      }, { headers });
+      const created = create.data as Segnalazione;
+      if (created.id) {
+        const d = await api.get(`/v1/segnalazioni/${created.id}`, { headers });
+        setDetail(d.data as Segnalazione);
+      } else {
+        setDetail(created);
+      }
+      setActiveScreen('dettaglio');
+    } catch {
+      setWizardError('Invio non riuscito. Verifica i dati inseriti e riprova.');
+    } finally { setWizardLoading(false); }
   };
 
   return (
     <main className="mobile-shell">
-      {activeScreen === 'login' && (
-        <section className="screen card institutional-login">
-          <p className="eyebrow">Portale Istituzionale Segnalazioni</p>
-          <h1>Accedi con identità digitale</h1>
-          <p className="muted">Servizio comunale per segnalazioni, priorità e aggiornamenti sul territorio.</p>
-          <div className="spid-card">
-            <strong>SPID / CIE</strong>
-            <p>Autenticazione sicura per cittadini e operatori.</p>
-            <button type="button" onClick={() => setActiveScreen('home')}>Entra con SPID</button>
-          </div>
-        </section>
-      )}
+      {activeScreen === 'login' && <section className="screen card institutional-login"><p className="eyebrow">Portale Istituzionale Segnalazioni</p><h1>Accedi con identità digitale</h1><p className="muted">Servizio comunale per segnalazioni, priorità e aggiornamenti sul territorio.</p><div className="spid-card"><strong>SPID / CIE</strong><p>Autenticazione sicura per cittadini e operatori.</p><button type="button" onClick={() => setActiveScreen('home')}>Entra con SPID</button></div></section>}
 
-      {activeScreen === 'home' && (
-        <section className="screen home-screen">
-          <header className="card welcome">
-            <p className="eyebrow">Comune di riferimento</p>
-            <h2>Benvenuto nel portale segnalazioni</h2>
-            <p className="muted">Consulta aggiornamenti, crea nuove segnalazioni e monitora lo stato delle tue richieste.</p>
-            <button type="button" className="primary" onClick={() => setActiveScreen('wizard')}>Crea segnalazione</button>
-          </header>
+      {activeScreen === 'home' && <section className="screen home-screen"><header className="card welcome"><p className="eyebrow">Comune di riferimento</p><h2>Benvenuto nel portale segnalazioni</h2><p className="muted">Consulta aggiornamenti, crea nuove segnalazioni e monitora lo stato delle tue richieste.</p><button type="button" className="primary" onClick={openWizard}>Crea segnalazione</button></header><article className="card"><h3>In evidenza</h3>{homeError && <p className="muted">{homeError}</p>}<div className="horizontal-list">{featuredItems.map((i) => <div key={i.title} className="feature-card"><span>{i.badge}</span><strong>{i.title}</strong><p>{i.text}</p></div>)}</div></article><article className="card"><h3>Le mie segnalazioni</h3><ul className="plain-list">{myReports.map((r) => <li key={r.id}><div><strong>{r.titolo}</strong><p>{r.id} • {r.stato}</p></div><small>{r.supporti} supporti</small></li>)}</ul></article><article className="card"><h3>Documentazione pubblica</h3><ul className="plain-list docs-list">{[...(publicDocs.global ?? []), ...(publicDocs.tenant ?? [])].map((d) => <li key={d.slug}>{d.title}</li>)}</ul></article></section>}
 
-          <article className="card">
-            <h3>Metriche territoriali</h3>
-            {homeLoading && <p className="muted">Caricamento metriche...</p>}
-            {homeError && <p className="muted">{homeError}</p>}
-            {!homeLoading && !homeError && (
-              <ul className="plain-list">
-                <li><strong>Segnalazioni totali</strong><small>{metrics?.total_segnalazioni ?? 0}</small></li>
-                <li><strong>Supporti civici</strong><small>{metrics?.total_votes ?? 0}</small></li>
-                <li><strong>Follow attivi</strong><small>{metrics?.total_follows ?? 0}</small></li>
-              </ul>
-            )}
-          </article>
+      {activeScreen === 'wizard' && <section className="screen card">
+        {wizardStep === 1 && <form className="screen" onSubmit={wizardStep1}><p className="eyebrow">Nuova segnalazione • Step 1 di 3</p><h2>Descrivi il problema</h2><label>Titolo<input aria-label="Titolo segnalazione" value={wizardTitle} onChange={(e) => setWizardTitle(e.target.value)} /></label><label>Descrizione<textarea aria-label="Descrizione segnalazione" value={wizardDescription} onChange={(e) => setWizardDescription(e.target.value)} /></label>{wizardError && <p className="error-text">{wizardError}</p>}<div className="row-actions"><button type="button" onClick={() => setActiveScreen('home')}>Annulla</button><button type="submit" className="primary">Prosegui</button></div></form>}
+        {wizardStep === 2 && <div className="screen"><p className="eyebrow">Nuova segnalazione • Step 2 di 3</p><h2>Controllo possibili duplicati</h2><div className="ai-insight" aria-label="Suggerimento duplicati"><p className="eyebrow">Verifica automatica</p><strong>{duplicateCandidates.length > 0 ? 'Segnalazioni simili trovate' : 'Nessun duplicato rilevante trovato'}</strong><p>{duplicateMode === 'endpoint' ? 'Controllo effettuato con endpoint dedicato duplicati.' : 'Controllo effettuato tramite ricerca deterministica su elenco segnalazioni.'}</p></div><ul className="plain-list">{duplicateCandidates.map((d) => <li key={d.id ?? d.codice}><div><strong>{d.titolo ?? 'Segnalazione simile'}</strong><p>{d.codice ?? d.id} • {statoLabel(d.stato)}</p></div><button type="button" onClick={() => setWizardDuplicateOf(d.id ?? '')}>{wizardDuplicateOf === d.id ? 'Selezionata' : 'Segna come simile'}</button></li>)}</ul><div className="row-actions"><button type="button" onClick={() => setWizardStep(1)}>Indietro</button><button type="button" className="primary" onClick={() => setWizardStep(3)}>Continua</button></div></div>}
+        {wizardStep === 3 && <form className="screen" onSubmit={submitWizard}><p className="eyebrow">Nuova segnalazione • Step 3 di 3</p><h2>Conferma e invia</h2><label>Indirizzo / riferimento area<input aria-label="Indirizzo segnalazione" value={wizardAddress} onChange={(e) => setWizardAddress(e.target.value)} /></label><label>Tag (separati da virgola)<input aria-label="Tag segnalazione" value={wizardTags} onChange={(e) => setWizardTags(e.target.value)} /></label>{wizardError && <p className="error-text">{wizardError}</p>}<div className="row-actions"><button type="button" onClick={() => setWizardStep(2)}>Indietro</button><button type="submit" className="primary" disabled={wizardLoading}>{wizardLoading ? 'Invio...' : 'Invia segnalazione'}</button></div></form>}
+      </section>}
 
-          <article className="card">
-            <h3>In evidenza</h3>
-            {homeLoading && <p className="muted">Caricamento segnalazioni in evidenza...</p>}
-            {!homeLoading && !homeError && featuredItems.length === 0 && <p className="muted">Nessuna segnalazione in evidenza disponibile.</p>}
-            <div className="horizontal-list" aria-label="Schede in evidenza">
-              {featuredItems.map((item) => (
-                <div key={item.title} className="feature-card">
-                  <span>{item.badge}</span>
-                  <strong>{item.title}</strong>
-                  <p>{item.text}</p>
-                </div>
-              ))}
-            </div>
-          </article>
+      {activeScreen === 'priorita' && <section className="screen card"><p className="eyebrow">Classifica segnalazioni</p><h2>Priorità del territorio</h2><div className="chips" aria-label="Categorie priorità"><span>Viabilità</span><span>Illuminazione</span><span>Decoro</span><span>Accessibilità</span></div><ul className="plain-list">{prioritiesMock.map((p) => <li key={p.titolo}><div><strong>{p.titolo}</strong><p>{p.categoria} • Trend {p.trend}</p></div><button type="button">Supporta ({p.supporti})</button></li>)}</ul></section>}
 
-          <article className="card">
-            <h3>Le mie segnalazioni</h3>
-            {homeLoading && <p className="muted">Caricamento delle tue segnalazioni...</p>}
-            {!homeLoading && !homeError && myReports.length === 0 && <p className="muted">Non risultano segnalazioni create con il tuo profilo.</p>}
-            <ul className="plain-list">
-              {myReports.map((report) => (
-                <li key={report.id}>
-                  <div>
-                    <strong>{report.titolo}</strong>
-                    <p>{report.id} • {report.stato}</p>
-                  </div>
-                  <small>{report.supporti} supporti</small>
-                </li>
-              ))}
-            </ul>
-          </article>
+      {activeScreen === 'dettaglio' && <section className="screen detail-screen"><article className="card"><p className="eyebrow">Dettaglio segnalazione</p>{detail ? <><h2>{detail.codice ?? detail.id} • {detail.titolo ?? 'Segnalazione inviata'}</h2><p className="success-text">Segnalazione registrata con successo. Conserva il codice pubblico per il monitoraggio.</p>{detail.timeline && detail.timeline.length > 0 && <ol className="timeline" aria-label="Timeline stato">{detail.timeline.map((t, i) => <li key={t.id ?? i}><strong>{t.message ?? t.event_type ?? 'Aggiornamento'}</strong><span>{t.created_at ? new Date(t.created_at).toLocaleString('it-IT') : 'Ora non disponibile'}</span></li>)}</ol>}</> : <h2>Nessuna nuova segnalazione inviata in questa sessione</h2>}</article><article className="card"><h3>Descrizione</h3><p>{detail?.descrizione ?? 'Nessun contenuto disponibile.'}</p></article></section>}
 
-          <article className="card">
-            <h3>Documentazione pubblica</h3>
-            <ul className="plain-list docs-list">
-              {[...(publicDocs.global ?? []), ...(publicDocs.tenant ?? [])].map((doc) => (
-                <li key={doc.slug}>{doc.title}</li>
-              ))}
-            </ul>
-          </article>
-        </section>
-      )}
-
-      {activeScreen === 'wizard' && (
-        <section className="screen card">
-          <form className="screen" onSubmit={submitWizardStep}>
-            <p className="eyebrow">Nuova segnalazione • Step 1 di 4</p>
-            <h2>Descrivi il problema</h2>
-            <label>
-              Titolo
-              <input aria-label="Titolo segnalazione" value={bugTitle} onChange={(e) => setBugTitle(e.target.value)} placeholder="Es. Dissesto manto stradale" />
-            </label>
-            <label>
-              Descrizione
-              <textarea aria-label="Descrizione segnalazione" value={bugDescription} onChange={(e) => setBugDescription(e.target.value)} placeholder="Indica posizione, orari e impatto" />
-            </label>
-
-            <div className="ai-insight" aria-label="Suggerimento duplicati">
-              <p className="eyebrow">Insight AI</p>
-              <strong>Possibile segnalazione simile trovata</strong>
-              <p>"Buche in via Verdi" (SGN-1245) a 350m. Valuta se supportare quella esistente per accelerare la priorità.</p>
-              <button type="button" onClick={() => setActiveScreen('priorita')}>Vai al ranking priorità</button>
-            </div>
-
-            <div className="row-actions">
-              <button type="button" onClick={() => setActiveScreen('home')}>Annulla</button>
-              <button type="submit" className="primary">Prosegui</button>
-            </div>
-          </form>
-        </section>
-      )}
-
-      {activeScreen === 'priorita' && (
-        <section className="screen card">
-          <p className="eyebrow">Classifica segnalazioni</p>
-          <h2>Priorità del territorio</h2>
-          <div className="chips" aria-label="Categorie priorità">
-            <span>Viabilità</span><span>Illuminazione</span><span>Decoro</span><span>Accessibilità</span>
-          </div>
-          <ul className="plain-list">
-            {prioritiesMock.map((p) => (
-              <li key={p.titolo}>
-                <div>
-                  <strong>{p.titolo}</strong>
-                  <p>{p.categoria} • Trend {p.trend}</p>
-                </div>
-                <button type="button">Supporta ({p.supporti})</button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {activeScreen === 'dettaglio' && (
-        <section className="screen detail-screen">
-          <article className="card">
-            <p className="eyebrow">Dettaglio segnalazione</p>
-            <h2>SGN-1245 • Buche in via Verdi</h2>
-            <ol className="timeline" aria-label="Timeline stato">
-              <li><strong>Inviata</strong><span>12 feb, 08:24</span></li>
-              <li><strong>Presa in carico</strong><span>12 feb, 14:05</span></li>
-              <li><strong>In lavorazione</strong><span>13 feb, 09:40</span></li>
-            </ol>
-          </article>
-
-          <article className="card">
-            <h3>Descrizione</h3>
-            <p>Avvallamenti diffusi sulla carreggiata in prossimità dell'incrocio con via Manzoni. Rischio per cicli e motocicli.</p>
-          </article>
-
-          <article className="card split">
-            <div>
-              <h3>Cittadini interessati</h3>
-              <p>41 supporti • 9 commenti civici moderati</p>
-            </div>
-            <button type="button">Segui aggiornamenti</button>
-          </article>
-
-          <article className="card">
-            <h3>Mappa area intervento</h3>
-            <div className="map-placeholder">Mappa georeferenziata (placeholder pronta per API map)</div>
-          </article>
-
-          {(access?.can_manage_branding || access?.can_manage_roles) && (
-            <details className="card admin-panel">
-              <summary>Strumenti amministrativi (API wiring esistente)</summary>
-              <form onSubmit={saveLanguage}><label>Lingua<select aria-label="Lingua" value={language} onChange={(e) => setLanguage(e.target.value as 'it' | 'en')}><option value="it">Italiano</option><option value="en">English</option></select></label><button type="submit">Salva lingua</button></form>
-              <form onSubmit={saveBranding}><label>Colore primario<input aria-label="Colore primario" value={branding.primary_color} onChange={(e) => setBranding((b) => ({ ...b, primary_color: e.target.value }))} /></label><label>Colore secondario<input aria-label="Colore secondario" value={branding.secondary_color} onChange={(e) => setBranding((b) => ({ ...b, secondary_color: e.target.value }))} /></label><button type="submit">Salva branding</button></form>
-              <form onSubmit={updateStatus}><label>Nuovo stato segnalazione<select aria-label="Nuovo stato segnalazione" value={governanceStatus} onChange={(e) => setGovernanceStatus(e.target.value)}><option value="in_attesa">in_attesa</option><option value="presa_in_carico">presa_in_carico</option><option value="in_lavorazione">in_lavorazione</option><option value="risolta">risolta</option><option value="chiusa">chiusa</option><option value="respinta">respinta</option></select></label><label>Messaggio transizione<input aria-label="Messaggio transizione" value={governanceStatusMsg} onChange={(e) => setGovernanceStatusMsg(e.target.value)} /></label><button type="submit">Aggiorna stato</button></form>
-              <form onSubmit={assignOperator}><label>ID operatore assegnazione<input aria-label="ID operatore assegnazione" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} /></label><label>Messaggio assegnazione<input aria-label="Messaggio assegnazione" value={assignMsg} onChange={(e) => setAssignMsg(e.target.value)} /></label><button type="submit">Assegna</button></form>
-              <form onSubmit={publishResponse}><label>Messaggio pubblico segnalazione<textarea aria-label="Messaggio pubblico segnalazione" value={publicResponse} onChange={(e) => setPublicResponse(e.target.value)} /></label><button type="submit">Pubblica risposta</button></form>
-              <form onSubmit={saveFlags}><label><input aria-label="Flag nascosta" type="checkbox" checked={flagHidden} onChange={(e) => setFlagHidden(e.target.checked)} />Flag nascosta</label><label><input aria-label="Flag abusiva" type="checkbox" checked={flagAbusive} onChange={(e) => setFlagAbusive(e.target.checked)} />Flag abusiva</label><label><input aria-label="Flag richiede revisione" type="checkbox" checked={flagRequiresReview} onChange={(e) => setFlagRequiresReview(e.target.checked)} />Flag richiede revisione</label><label>Flag duplicata di<input aria-label="Flag duplicata di" value={flagDuplicateOf} onChange={(e) => setFlagDuplicateOf(e.target.value)} /></label><label>Nota moderazione<input aria-label="Nota moderazione" value={moderationNote} onChange={(e) => setModerationNote(e.target.value)} /></label><button type="submit">Salva flag</button></form>
-              {access?.can_manage_roles && (<><form onSubmit={saveGlobalDoc}><label>Slug globale<input aria-label="Slug globale" value={globalDoc.slug} onChange={(e) => setGlobalDoc((d) => ({ ...d, slug: e.target.value }))} /></label><label>Titolo globale<input aria-label="Titolo globale" value={globalDoc.title} onChange={(e) => setGlobalDoc((d) => ({ ...d, title: e.target.value }))} /></label><label>Contenuto globale<textarea aria-label="Contenuto globale" value={globalDoc.content_md} onChange={(e) => setGlobalDoc((d) => ({ ...d, content_md: e.target.value }))} /></label><button type="submit">Salva doc globale</button></form></>)}
-              {(access?.can_manage_branding || access?.can_manage_roles) && (<form onSubmit={saveTenantDoc}><label>Slug tenant<input aria-label="Slug tenant" value={tenantDoc.slug} onChange={(e) => setTenantDoc((d) => ({ ...d, slug: e.target.value }))} /></label><label>Titolo tenant<input aria-label="Titolo tenant" value={tenantDoc.title} onChange={(e) => setTenantDoc((d) => ({ ...d, title: e.target.value }))} /></label><label>Contenuto tenant<textarea aria-label="Contenuto tenant" value={tenantDoc.content_md} onChange={(e) => setTenantDoc((d) => ({ ...d, content_md: e.target.value }))} /></label><button type="submit">Salva doc tenant</button></form>)}
-            </details>
-          )}
-        </section>
-      )}
-
-      <nav className="bottom-nav" aria-label="Navigazione mobile">
-        <button type="button" onClick={() => setActiveScreen('home')} className={activeScreen === 'home' ? 'active' : ''}>Home</button>
-        <button type="button" onClick={() => setActiveScreen('wizard')} className={activeScreen === 'wizard' ? 'active' : ''}>Nuova</button>
-        <button type="button" onClick={() => setActiveScreen('priorita')} className={activeScreen === 'priorita' ? 'active' : ''}>Priorità</button>
-        <button type="button" onClick={() => setActiveScreen('dettaglio')} className={activeScreen === 'dettaglio' ? 'active' : ''}>Dettaglio</button>
-      </nav>
+      <nav className="bottom-nav" aria-label="Navigazione mobile"><button type="button" onClick={() => setActiveScreen('home')} className={activeScreen === 'home' ? 'active' : ''}>Home</button><button type="button" onClick={openWizard} className={activeScreen === 'wizard' ? 'active' : ''}>Nuova</button><button type="button" onClick={() => setActiveScreen('priorita')} className={activeScreen === 'priorita' ? 'active' : ''}>Priorità</button><button type="button" onClick={() => setActiveScreen('dettaglio')} className={activeScreen === 'dettaglio' ? 'active' : ''}>Dettaglio</button></nav>
     </main>
   );
 }
