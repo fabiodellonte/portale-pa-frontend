@@ -1,15 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Portale PA">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#1d4ed8"/>
-      <stop offset="100%" stop-color="#2563eb"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" rx="112" fill="url(#g)"/>
-  <path d="M256 108c-76 0-138 62-138 138 0 99 112 208 130 224a12 12 0 0 0 16 0c18-16 130-125 130-224 0-76-62-138-138-138Zm0 188a50 50 0 1 1 0-100 50 50 0 0 1 0 100Z" fill="#fff" opacity="0.98"/>
-  <rect x="214" y="328" width="84" height="66" rx="8" fill="#ffffff"/>
-  <rect x="228" y="342" width="10" height="10" rx="2" fill="#1d4ed8"/>
-  <rect x="246" y="342" width="10" height="10" rx="2" fill="#1d4ed8"/>
-  <rect x="264" y="342" width="10" height="10" rx="2" fill="#1d4ed8"/>
-  <rect x="228" y="360" width="46" height="10" rx="2" fill="#1d4ed8"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Portale PA - Città">
+  <rect width="512" height="512" rx="112" fill="#1e88ff"/>
+
+  <!-- City skyline (white, 2px stroke) -->
+  <g fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Ground -->
+    <path d="M96 356H416" />
+
+    <!-- Buildings -->
+    <rect x="118" y="232" width="56" height="124" rx="2"/>
+    <rect x="184" y="206" width="70" height="150" rx="2"/>
+    <rect x="264" y="246" width="54" height="110" rx="2"/>
+    <rect x="326" y="218" width="68" height="138" rx="2"/>
+
+    <!-- Windows lines -->
+    <path d="M132 250h28M132 268h28M132 286h28M132 304h28M132 322h28"/>
+    <path d="M198 228h42M198 246h42M198 264h42M198 282h42M198 300h42M198 318h42"/>
+    <path d="M276 264h30M276 282h30M276 300h30M276 318h30"/>
+    <path d="M340 238h40M340 256h40M340 274h40M340 292h40M340 310h40"/>
+
+    <!-- Stylized dome / civic silhouette -->
+    <path d="M208 186c10-20 22-30 48-30s38 10 48 30"/>
+    <path d="M236 186v20M276 186v20"/>
+
+    <!-- Small flag on one building -->
+    <path d="M360 196v22"/>
+    <path d="M360 196h16l-4 6 4 6h-16"/>
+  </g>
 </svg>
