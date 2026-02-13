@@ -90,6 +90,15 @@ h1, h2, h3, p { margin: 0; }
 }
 .plain-list li p { color: #4b5563; font-size: 0.9rem; }
 .docs-list li { display: block; }
+.settings-links a {
+  color: #0f4d8a;
+  text-decoration: none;
+  font-weight: 600;
+}
+.settings-links a:hover,
+.settings-links a:focus-visible {
+  text-decoration: underline;
+}
 .inline-actions { display: flex; gap: 8px; align-items: center; }
 .inline-actions button { width: auto; padding: 6px 10px; }
 
