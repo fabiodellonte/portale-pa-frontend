@@ -1,6 +1,7 @@
+import { ReactNode } from 'react';
 import { Button } from './Button';
 
-type Item = { key: string; label: string; icon: string; onClick: () => void };
+type Item = { key: string; label: string; icon: ReactNode; onClick: () => void };
 
 export function BottomNav({ items, activeKey }: { items: Item[]; activeKey: string }) {
   return (

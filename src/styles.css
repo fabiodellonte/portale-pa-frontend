@@ -44,6 +44,7 @@
   --gradient-wizard: linear-gradient(180deg, #fcfdff 0%, #f6f9fe 100%);
   --gradient-card-elevated: linear-gradient(180deg, #ffffff 0%, var(--color-surface-soft) 100%);
   --shadow-nav: 0 -8px 24px rgba(17, 38, 66, 0.08);
+  --icon-stroke-width: 2.6;
 }
 
 :root[data-theme='dark'] {
@@ -106,7 +107,7 @@ label { display: grid; gap: var(--space-2); font-size: var(--font-sm); }
   height: 18px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2;
+  stroke-width: var(--icon-stroke-width);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -347,8 +348,37 @@ textarea:focus-visible {
   box-shadow: var(--shadow-nav);
 }
 .bottom-nav .ui-button.nav-item { padding: 7px 4px; font-size: var(--font-xs); display: grid; gap: 2px; justify-items: center; }
-.nav-item__icon { font-size: 16px; }
-.bottom-nav .ui-button.active { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-soft); font-weight: 700; }
+.nav-item__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+}
+.nav-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--icon-stroke-width);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bottom-nav .ui-button.nav-item .nav-item__label { color: var(--color-text-muted); }
+.bottom-nav .ui-button.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  font-weight: 700;
+}
+.bottom-nav .ui-button.active .nav-item__icon {
+  background: var(--color-primary);
+  border-color: #ffffff;
+}
+.bottom-nav .ui-button.active .nav-item__label { color: var(--color-primary); }
 
 @media (min-width: 768px) {
   .app-shell.mobile-shell {

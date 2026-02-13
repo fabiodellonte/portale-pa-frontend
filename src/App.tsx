@@ -58,10 +58,11 @@ function getSearchString(v: string) {
   return v.toLowerCase().replace(/[^a-z0-9àèéìòù\s]/gi, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 4).join(' ');
 }
 
-function TopbarIcon({ path }: { path: string }) {
+function OutlineIcon({ paths, className = 'topbar-icon' }: { paths: string | string[]; className?: string }) {
+  const iconPaths = Array.isArray(paths) ? paths : [paths];
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="topbar-icon" focusable="false">
-      <path d={path} />
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} focusable="false">
+      {iconPaths.map((path) => <path key={path} d={path} />)}
     </svg>
   );
 }
@@ -472,10 +473,10 @@ export default function App() {
             <h1 className="topbar-brand">Città di {tenantName}</h1>
           </div>
           <div className="app-topbar__actions">
-            <button type="button" aria-label="Cerca" className="icon-btn" onClick={() => setIsSearchOpen(true)}><TopbarIcon path="M11 4a7 7 0 1 0 4.95 11.95l4.05 4.05 1.4-1.4-4.05-4.05A7 7 0 0 0 11 4Z" /></button>
-            <button type="button" aria-label="Documentazione pubblica" className="icon-btn" onClick={() => setActiveScreen('docs')}><TopbarIcon path="M6 4h9l3 3v13H6z M15 4v4h4 M9 11h6 M9 15h6" /></button>
-            <button type="button" aria-label="Notifiche" className="icon-btn" onClick={() => setActiveScreen('notifiche')}><TopbarIcon path="M12 4a4 4 0 0 0-4 4v2.5c0 .9-.3 1.8-.9 2.5L6 14.5h12L16.9 13c-.6-.7-.9-1.6-.9-2.5V8a4 4 0 0 0-4-4ZM10 18a2 2 0 0 0 4 0" />{unreadNotifications > 0 && <span className="icon-badge">{Math.min(unreadNotifications, 9)}</span>}</button>
-            <button type="button" aria-label="Profilo" className="icon-btn" onClick={() => setActiveScreen('profilo')}><TopbarIcon path="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-3.3 0-6 2.2-6 5h12c0-2.8-2.7-5-6-5Z" /></button>
+            <button type="button" aria-label="Cerca" className="icon-btn" onClick={() => setIsSearchOpen(true)}><OutlineIcon paths="M11 4a7 7 0 1 0 4.95 11.95l4.05 4.05 1.4-1.4-4.05-4.05A7 7 0 0 0 11 4Z" /></button>
+            <button type="button" aria-label="Documentazione pubblica" className="icon-btn" onClick={() => setActiveScreen('docs')}><OutlineIcon paths={["M6 4h9l3 3v13H6z", "M15 4v4h4", "M9 11h6", "M9 15h6"]} /></button>
+            <button type="button" aria-label="Notifiche" className="icon-btn" onClick={() => setActiveScreen('notifiche')}><OutlineIcon paths={["M12 4a4 4 0 0 0-4 4v2.5c0 .9-.3 1.8-.9 2.5L6 14.5h12L16.9 13c-.6-.7-.9-1.6-.9-2.5V8a4 4 0 0 0-4-4Z", "M10 18a2 2 0 0 0 4 0"]} />{unreadNotifications > 0 && <span className="icon-badge">{Math.min(unreadNotifications, 9)}</span>}</button>
+            <button type="button" aria-label="Profilo" className="icon-btn" onClick={() => setActiveScreen('profilo')}><OutlineIcon paths={["M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Z", "M12 14c-3.3 0-6 2.2-6 5h12c0-2.8-2.7-5-6-5Z"]} /></button>
           </div>
         </header>
       )}
@@ -639,11 +640,11 @@ export default function App() {
       {activeScreen !== 'login' && <BottomNav
         activeKey={activeScreen}
         items={[
-          { key: 'home', label: 'Home', icon: '🏠', onClick: () => setActiveScreen('home') },
-          { key: 'wizard', label: 'Nuova', icon: '➕', onClick: openWizard },
-          { key: 'priorita', label: 'Priorità', icon: '📊', onClick: () => setActiveScreen('priorita') },
-          { key: 'notifiche', label: 'Notifiche', icon: '🔔', onClick: () => setActiveScreen('notifiche') },
-          { key: 'profilo', label: 'Profilo', icon: '👤', onClick: () => setActiveScreen('profilo') }
+          { key: 'home', label: 'Home', icon: <OutlineIcon className="nav-icon" paths={["M3.5 10.5 12 3l8.5 7.5", "M5.5 9.5V20h13V9.5", "M9.5 20v-5h5v5"]} />, onClick: () => setActiveScreen('home') },
+          { key: 'wizard', label: 'Nuova', icon: <OutlineIcon className="nav-icon" paths={["M12 5v14", "M5 12h14"]} />, onClick: openWizard },
+          { key: 'priorita', label: 'Priorità', icon: <OutlineIcon className="nav-icon" paths={["M5 19V9", "M12 19V5", "M19 19v-7", "M3 19h18"]} />, onClick: () => setActiveScreen('priorita') },
+          { key: 'notifiche', label: 'Notifiche', icon: <OutlineIcon className="nav-icon" paths={["M12 4a4 4 0 0 0-4 4v2.5c0 .9-.3 1.8-.9 2.5L6 14.5h12L16.9 13c-.6-.7-.9-1.6-.9-2.5V8a4 4 0 0 0-4-4Z", "M10 18a2 2 0 0 0 4 0"]} />, onClick: () => setActiveScreen('notifiche') },
+          { key: 'profilo', label: 'Profilo', icon: <OutlineIcon className="nav-icon" paths={["M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Z", "M12 14c-3.3 0-6 2.2-6 5h12c0-2.8-2.7-5-6-5Z"]} />, onClick: () => setActiveScreen('profilo') }
         ]}
       />}
     </main>
