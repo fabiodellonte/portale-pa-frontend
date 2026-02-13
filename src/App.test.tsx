@@ -203,6 +203,33 @@ describe('Portale PA mobile dettaglio', () => {
     }), expect.anything()));
   });
 
+  it('renders wizard with step progress and responsive shell classes', async () => {
+    render(<App />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Crea segnalazione' }));
+
+    expect(screen.getByTestId('wizard-shell')).toBeInTheDocument();
+    expect(screen.getByLabelText('Step 1 di 3')).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Titolo segnalazione'), 'Buche via Roma');
+    await userEvent.type(screen.getByLabelText('Descrizione segnalazione'), 'Descrizione abbastanza lunga per completare il wizard.');
+    await userEvent.click(screen.getByRole('button', { name: 'Prosegui' }));
+
+    expect(await screen.findByLabelText('Step 2 di 3')).toBeInTheDocument();
+  });
+
+  it('renders dedicated priority and detail responsive shells', async () => {
+    render(<App />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Priorità' }));
+    expect(await screen.findByTestId('priority-shell')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Dettaglio' }));
+    expect(await screen.findByTestId('detail-screen')).toBeInTheDocument();
+  });
+
   it('keeps deterministic duplicate-search normalization contract', () => {
     const raw = 'Buche!!! via Verdi   incrocio';
     const normalized = raw.toLowerCase().replace(/[^a-z0-9àèéìòù\s]/gi, ' ').replace(/\s+/g, ' ').trim();

@@ -12,6 +12,7 @@
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 24px;
+  --space-7: 32px;
 
   --radius-sm: 10px;
   --radius-md: 14px;
@@ -19,6 +20,7 @@
   --radius-pill: 999px;
 
   --shadow-sm: 0 2px 10px rgba(9, 33, 61, 0.08);
+  --shadow-md: 0 10px 24px rgba(9, 33, 61, 0.12);
   --motion-fast: 140ms;
 
   --color-bg: #eef2f7;
@@ -43,15 +45,15 @@
 body {
   margin: 0;
   font-family: var(--font-family);
-  background: var(--color-bg);
+  background: linear-gradient(180deg, #f5f8fc 0%, var(--color-bg) 220px);
   color: var(--color-text);
 }
 
 h1, h2, h3, h4, p { margin: 0; }
 label { display: grid; gap: var(--space-2); font-size: var(--font-sm); }
 
-.mobile-shell {
-  max-width: 520px;
+.app-shell.mobile-shell {
+  width: min(100%, 1180px);
   margin: 0 auto;
   min-height: 100vh;
   padding: var(--space-4) var(--space-4) 88px;
@@ -119,7 +121,7 @@ label { display: grid; gap: var(--space-2); font-size: var(--font-sm); }
 .ui-badge--warning { background: var(--color-warning-bg); color: var(--color-warning-text); }
 
 .dev-profile-switcher { display: grid; gap: var(--space-2); }
-.dev-profile-switcher__header, .inline-actions { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
+.dev-profile-switcher__header, .inline-actions { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .inline-actions .ui-button { width: auto; }
 
 .institutional-login { margin-top: 28px; gap: var(--space-3); }
@@ -142,12 +144,63 @@ label { display: grid; gap: var(--space-2); font-size: var(--font-sm); }
 .chips { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .ai-insight { border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-3); display: grid; gap: var(--space-2); background: var(--color-primary-soft); }
 
-.row-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+.wizard-shell {
+  gap: var(--space-4);
+  background: linear-gradient(180deg, #fcfdff 0%, #f6f9fe 100%);
+}
+.wizard-head {
+  display: grid;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+.wizard-progress {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.wizard-progress span {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+}
+.wizard-progress span.is-done { background: var(--color-primary); }
+.wizard-step { gap: var(--space-4); }
+.wizard-layout { display: grid; gap: var(--space-4); }
+.wizard-main, .wizard-aside { display: grid; gap: var(--space-3); align-content: start; }
+.wizard-suggestions .ui-button { justify-content: flex-start; text-align: left; }
+.wizard-duplicate-list li { align-items: flex-start; }
+
+.priority-shell {
+  gap: var(--space-4);
+}
+.priority-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-3);
+}
+.priority-list .priority-item {
+  background: linear-gradient(180deg, #ffffff, var(--color-surface-soft));
+  border-color: #ccd9ea;
+}
+
+.row-actions { display: flex; justify-content: flex-end; gap: var(--space-2); flex-wrap: wrap; }
 .error-text { color: var(--color-danger-text); font-size: var(--font-sm); }
 .success-text { color: var(--color-success-text); background: var(--color-success-bg); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); font-size: var(--font-sm); }
 
+.detail-screen {
+  display: grid;
+  gap: var(--space-3);
+}
+.detail-hero {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+.detail-content p { line-height: 1.5; }
 .timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
-.timeline li { border-left: 2px solid var(--color-border); padding-left: var(--space-2); display: grid; }
+.timeline li { border-left: 2px solid var(--color-border); padding-left: var(--space-2); display: grid; gap: 2px; }
 .timeline span { color: var(--color-text-muted); font-size: var(--font-sm); }
 
 .bottom-nav {
@@ -155,7 +208,7 @@ label { display: grid; gap: var(--space-2); font-size: var(--font-sm); }
   bottom: 0;
   left: 0;
   right: 0;
-  max-width: 520px;
+  width: min(100%, 1180px);
   margin: 0 auto;
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
@@ -163,6 +216,78 @@ label { display: grid; gap: var(--space-2); font-size: var(--font-sm); }
   grid-template-columns: repeat(4, 1fr);
   gap: var(--space-2);
   padding: 10px;
+  box-shadow: 0 -8px 24px rgba(17, 38, 66, 0.08);
 }
 .bottom-nav .ui-button { padding: 8px 6px; font-size: var(--font-sm); }
 .bottom-nav .ui-button.active { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-soft); }
+
+@media (min-width: 768px) {
+  .app-shell.mobile-shell {
+    padding: var(--space-6) var(--space-6) 98px;
+    gap: var(--space-4);
+  }
+
+  .screen.home-screen {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .home-screen .welcome { grid-column: 1 / -1; }
+
+  .wizard-layout {
+    grid-template-columns: 1.25fr 0.9fr;
+  }
+
+  .priority-list .priority-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+  }
+
+  .detail-screen {
+    grid-template-columns: 1.15fr 0.85fr;
+    align-items: start;
+  }
+
+  .bottom-nav {
+    border: 1px solid var(--color-border);
+    border-bottom: 0;
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    padding: 12px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-shell.mobile-shell {
+    padding-bottom: 32px;
+  }
+
+  .bottom-nav {
+    position: sticky;
+    top: var(--space-4);
+    align-self: start;
+    border-radius: var(--radius-md);
+    border-bottom: 1px solid var(--color-border);
+    grid-template-columns: 1fr;
+    height: fit-content;
+    max-width: 180px;
+    margin-left: auto;
+    margin-right: 0;
+  }
+
+  .app-shell.mobile-shell {
+    grid-template-columns: minmax(0, 1fr) 180px;
+    align-items: start;
+  }
+
+  .app-shell.mobile-shell > :not(.bottom-nav) {
+    grid-column: 1;
+  }
+
+  .app-shell.mobile-shell .bottom-nav {
+    grid-column: 2;
+    grid-row: 1 / span 20;
+  }
+
+  .ui-card { box-shadow: var(--shadow-md); }
+}
