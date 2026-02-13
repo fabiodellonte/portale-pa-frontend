@@ -1,29 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Portale PA - Città">
   <rect width="512" height="512" rx="112" fill="#1e88ff"/>
 
-  <!-- City skyline (white, 2px stroke) -->
-  <g fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <!-- Ground -->
-    <path d="M96 356H416" />
+  <g fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <!-- sole stilizzato -->
+    <circle cx="368" cy="138" r="26" />
+    <path d="M368 94v-14M368 196v14M324 138h-14M426 138h14M338 108l-10-10M398 168l10 10M398 108l10-10M338 168l-10 10" />
 
-    <!-- Buildings -->
-    <rect x="118" y="232" width="56" height="124" rx="2"/>
-    <rect x="184" y="206" width="70" height="150" rx="2"/>
-    <rect x="264" y="246" width="54" height="110" rx="2"/>
-    <rect x="326" y="218" width="68" height="138" rx="2"/>
+    <!-- profilo città stilizzato -->
+    <path d="M88 352H424" />
+    <path d="M118 352V262h56v90" />
+    <path d="M188 352V230h74v122" />
+    <path d="M276 352V278h50v74" />
+    <path d="M340 352V246h72v106" />
 
-    <!-- Windows lines -->
-    <path d="M132 250h28M132 268h28M132 286h28M132 304h28M132 322h28"/>
-    <path d="M198 228h42M198 246h42M198 264h42M198 282h42M198 300h42M198 318h42"/>
-    <path d="M276 264h30M276 282h30M276 300h30M276 318h30"/>
-    <path d="M340 238h40M340 256h40M340 274h40M340 292h40M340 310h40"/>
+    <!-- dettagli minimi facciate -->
+    <path d="M136 286h20M136 304h20M206 258h36M206 278h36M294 300h14M360 272h30M360 294h30" />
 
-    <!-- Stylized dome / civic silhouette -->
-    <path d="M208 186c10-20 22-30 48-30s38 10 48 30"/>
-    <path d="M236 186v20M276 186v20"/>
-
-    <!-- Small flag on one building -->
-    <path d="M360 196v22"/>
-    <path d="M360 196h16l-4 6 4 6h-16"/>
+    <!-- cupola civica centrale -->
+    <path d="M206 230c8-24 22-36 46-36s38 12 46 36" />
   </g>
 </svg>
