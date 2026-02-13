@@ -11,6 +11,7 @@ type Access = {
 
 type Branding = { logo_url?: string | null; primary_color: string; secondary_color: string };
 type Doc = { id?: string; slug: string; title: string; content_md: string; is_published?: boolean; sort_order?: number };
+type GovernanceItem = { id: string; titolo?: string };
 
 const resolvedApiBase = import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:18080`;
 const api = axios.create({ baseURL: resolvedApiBase });
@@ -26,9 +27,18 @@ export default function App() {
   const [branding, setBranding] = useState<Branding>({ primary_color: '#0055A4', secondary_color: '#FFFFFF' });
   const [bugTitle, setBugTitle] = useState('');
   const [bugDescription, setBugDescription] = useState('');
+  const [bugOpen, setBugOpen] = useState(false);
   const [publicDocs, setPublicDocs] = useState<{ global: Doc[]; tenant: Doc[] }>({ global: [], tenant: [] });
   const [globalDoc, setGlobalDoc] = useState<Doc>({ slug: '', title: '', content_md: '' });
   const [tenantDoc, setTenantDoc] = useState<Doc>({ slug: '', title: '', content_md: '' });
+  const [governanceItems, setGovernanceItems] = useState<GovernanceItem[]>([]);
+  const [governanceStatus, setGovernanceStatus] = useState('in_lavorazione');
+  const [governanceStatusMsg, setGovernanceStatusMsg] = useState('');
+  const [assignedTo, setAssignedTo] = useState('');
+  const [assignMsg, setAssignMsg] = useState('');
+  const [publicResponse, setPublicResponse] = useState('');
+  const [flagHidden, setFlagHidden] = useState(false);
+  const [moderationNote, setModerationNote] = useState('');
 
   const headers = { 'x-user-id': userId, 'x-tenant-id': tenantId };
 
@@ -43,9 +53,25 @@ export default function App() {
       setLanguage(prefRes.data.language ?? 'it');
       setAccess(accessRes.data);
       setBranding(brandingRes.data);
-      setPublicDocs(docsRes.data);
+      setPublicDocs(docsRes.data?.global && docsRes.data?.tenant ? docsRes.data : { global: [], tenant: [] });
     })();
   }, [tenantId, userId]);
+
+  useEffect(() => {
+    if (!(access?.can_manage_branding || access?.can_manage_roles)) {
+      setGovernanceItems([]);
+      return;
+    }
+
+    void (async () => {
+      try {
+        const listRes = await api.get('/v1/segnalazioni', { headers, params: { tenant_id: tenantId, page: 1, page_size: 1 } });
+        setGovernanceItems(listRes?.data?.items ?? []);
+      } catch {
+        setGovernanceItems([]);
+      }
+    })();
+  }, [access?.can_manage_branding, access?.can_manage_roles, tenantId, userId]);
 
   const saveLanguage = async (e: FormEvent) => {
     e.preventDefault();
@@ -62,6 +88,7 @@ export default function App() {
     await api.post('/v1/bug-reports', { title: bugTitle, description: bugDescription, page_url: window.location.href }, { headers });
     setBugTitle('');
     setBugDescription('');
+    setBugOpen(false);
   };
 
   const saveGlobalDoc = async (e: FormEvent) => {
@@ -72,6 +99,32 @@ export default function App() {
   const saveTenantDoc = async (e: FormEvent) => {
     e.preventDefault();
     await api.post(`/v1/admin/docs/tenant/${tenantId}`, { ...tenantDoc, is_published: true, sort_order: 0 }, { headers });
+  };
+
+  const firstGovernanceId = governanceItems[0]?.id;
+
+  const updateStatus = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!firstGovernanceId) return;
+    await api.post(`/v1/admin/segnalazioni/${firstGovernanceId}/status-transition`, { tenant_id: tenantId, status: governanceStatus, message: governanceStatusMsg }, { headers });
+  };
+
+  const assignOperator = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!firstGovernanceId) return;
+    await api.post(`/v1/admin/segnalazioni/${firstGovernanceId}/assign`, { tenant_id: tenantId, assigned_to: assignedTo, message: assignMsg }, { headers });
+  };
+
+  const publishResponse = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!firstGovernanceId) return;
+    await api.post(`/v1/admin/segnalazioni/${firstGovernanceId}/public-response`, { tenant_id: tenantId, message: publicResponse }, { headers });
+  };
+
+  const saveFlags = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!firstGovernanceId) return;
+    await api.post(`/v1/admin/segnalazioni/${firstGovernanceId}/moderation-flags`, { tenant_id: tenantId, flags: { hidden: flagHidden, note: moderationNote } }, { headers });
   };
 
   return (
@@ -107,13 +160,50 @@ export default function App() {
       </section>
 
       <section className="page card">
-        <h2>Segnala un bug</h2>
-        <form onSubmit={sendBug}>
-          <label>Titolo bug<input aria-label="Titolo bug" value={bugTitle} onChange={(e) => setBugTitle(e.target.value)} /></label>
-          <label>Descrizione bug<textarea aria-label="Descrizione bug" value={bugDescription} onChange={(e) => setBugDescription(e.target.value)} /></label>
-          <button type="submit">Invia bug report</button>
-        </form>
+        <h2>Supporto</h2>
+        <button type="button" onClick={() => setBugOpen((v) => !v)}>Segnala bug</button>
+        {bugOpen && (
+          <form onSubmit={sendBug}>
+            <label>Titolo bug<input aria-label="Titolo bug" value={bugTitle} onChange={(e) => setBugTitle(e.target.value)} /></label>
+            <label>Descrizione bug<textarea aria-label="Descrizione bug" value={bugDescription} onChange={(e) => setBugDescription(e.target.value)} /></label>
+            <button type="submit">Invia bug report</button>
+          </form>
+        )}
       </section>
+
+      {(access?.can_manage_branding || access?.can_manage_roles) && (
+        <section className="page card">
+          <h2>Governance segnalazioni (amministrazione)</h2>
+          <form onSubmit={updateStatus}>
+            <label>Nuovo stato segnalazione
+              <select aria-label="Nuovo stato segnalazione" value={governanceStatus} onChange={(e) => setGovernanceStatus(e.target.value)}>
+                <option value="presa_in_carico">presa_in_carico</option>
+                <option value="in_lavorazione">in_lavorazione</option>
+                <option value="risolta">risolta</option>
+              </select>
+            </label>
+            <label>Messaggio transizione<input aria-label="Messaggio transizione" value={governanceStatusMsg} onChange={(e) => setGovernanceStatusMsg(e.target.value)} /></label>
+            <button type="submit">Aggiorna stato</button>
+          </form>
+          <form onSubmit={assignOperator}>
+            <label>ID operatore assegnazione<input aria-label="ID operatore assegnazione" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} /></label>
+            <label>Messaggio assegnazione<input aria-label="Messaggio assegnazione" value={assignMsg} onChange={(e) => setAssignMsg(e.target.value)} /></label>
+            <button type="submit">Assegna</button>
+          </form>
+          <form onSubmit={publishResponse}>
+            <label>Messaggio pubblico segnalazione<textarea aria-label="Messaggio pubblico segnalazione" value={publicResponse} onChange={(e) => setPublicResponse(e.target.value)} /></label>
+            <button type="submit">Pubblica risposta</button>
+          </form>
+          <form onSubmit={saveFlags}>
+            <label>
+              <input aria-label="Flag nascosta" type="checkbox" checked={flagHidden} onChange={(e) => setFlagHidden(e.target.checked)} />
+              Flag nascosta
+            </label>
+            <label>Nota moderazione<input aria-label="Nota moderazione" value={moderationNote} onChange={(e) => setModerationNote(e.target.value)} /></label>
+            <button type="submit">Salva flag</button>
+          </form>
+        </section>
+      )}
 
       {access?.can_manage_branding && (
         <section className="page card">
