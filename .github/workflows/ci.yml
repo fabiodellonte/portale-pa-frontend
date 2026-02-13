@@ -24,8 +24,23 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Inject build metadata (version/commit/date)
+        shell: bash
+        run: |
+          echo "VITE_APP_VERSION=$(node -p \"require('./package.json').version\")" >> "$GITHUB_ENV"
+          echo "VITE_APP_BUILD_COMMIT=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          echo "VITE_APP_BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
+
       - name: Build
         run: npm run build
+
+      - name: Check build metadata presence
+        shell: bash
+        run: |
+          test -n "$VITE_APP_VERSION"
+          test -n "$VITE_APP_BUILD_COMMIT"
+          test -n "$VITE_APP_BUILD_DATE"
+          echo "Build metadata OK: v$VITE_APP_VERSION ($VITE_APP_BUILD_COMMIT)" 
 
       - name: Unit tests
         run: npm test
