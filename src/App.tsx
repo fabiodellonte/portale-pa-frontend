@@ -30,6 +30,8 @@ type Segnalazione = {
   timeline?: Array<{ id?: string; message?: string; event_type?: string; created_at?: string }>;
 };
 
+type PriorityItem = { id: string; titolo: string; categoria: string; trend: string; supporti: number };
+
 type Screen = 'login' | 'home' | 'wizard' | 'priorita' | 'dettaglio';
 type WizardStep = 1 | 2 | 3;
 type DevProfileKey = 'citizen_demo' | 'maintainer_demo' | 'admin_demo';
@@ -50,12 +52,6 @@ const devProfiles: DevProfile[] = [
   { key: 'admin_demo', label: 'admin_demo', userId: '00000000-0000-0000-0000-000000000333', tenantId: defaultTenant }
 ];
 
-const prioritiesMock = [
-  { titolo: 'Sicurezza attraversamento scuola', trend: '+12%', supporti: 189, categoria: 'Viabilità' },
-  { titolo: 'Perdite idriche in quartiere nord', trend: '+7%', supporti: 121, categoria: 'Acqua' },
-  { titolo: 'Barriere architettoniche marciapiede', trend: '+4%', supporti: 96, categoria: 'Accessibilità' }
-];
-
 function statoLabel(stato?: string) {
   return stato ? stato.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase()) : 'In lavorazione';
 }
@@ -64,7 +60,6 @@ function getSearchString(v: string) {
 }
 
 export default function App() {
-  // TEMP: keep always visible during current QA cycle; to hide again restore env-gated condition.
   const devProfileSwitchEnabled = true;
   const [tenantId, setTenantId] = useState(defaultTenant);
   const [userId, setUserId] = useState(defaultUser);
@@ -89,6 +84,7 @@ export default function App() {
   const [duplicateMode, setDuplicateMode] = useState<'endpoint' | 'fallback' | null>(null);
   const [duplicateCandidates, setDuplicateCandidates] = useState<Segnalazione[]>([]);
 
+  const [priorityItems, setPriorityItems] = useState<PriorityItem[]>([]);
   const [detail, setDetail] = useState<Segnalazione | null>(null);
 
   const headers = useMemo(() => ({ 'x-user-id': userId, 'x-tenant-id': tenantId }), [tenantId, userId]);
@@ -139,7 +135,7 @@ export default function App() {
         const segnalazioniRes = await api.get('/v1/segnalazioni', { headers, params: { tenant_id: tenantId, page: 1, page_size: 50, sort: 'updated_at.desc' } });
         const all = (segnalazioniRes.data?.items ?? []) as Segnalazione[];
         setFeaturedItems(all.slice(0, 3).map((i) => ({ title: i.titolo ?? 'Segnalazione', text: `Stato: ${statoLabel(i.stato)}`, badge: statoLabel(i.stato) })));
-        setMyReports(all.filter((i) => i.created_by === userId || i.reported_by === userId || i.user_id === userId || i.author_id === userId).map((i) => ({ id: i.id ?? i.codice ?? 'SGN', titolo: i.titolo ?? 'Segnalazione', stato: statoLabel(i.stato), supporti: i.votes_count ?? i.supporti ?? 0 })));      
+        setMyReports(all.filter((i) => i.created_by === userId || i.reported_by === userId || i.user_id === userId || i.author_id === userId).map((i) => ({ id: i.id ?? i.codice ?? 'SGN', titolo: i.titolo ?? 'Segnalazione', stato: statoLabel(i.stato), supporti: i.votes_count ?? i.supporti ?? 0 })));
         setHomeError('');
       } catch {
         setHomeError('Al momento non è possibile caricare i dati aggiornati. Riprova più tardi.');
@@ -148,6 +144,32 @@ export default function App() {
       }
     })();
   }, [headers, tenantId, userId]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const prioritiesRes = await api.get('/v1/segnalazioni/priorities', { headers, params: { tenant_id: tenantId, limit: 10 } });
+        setPriorityItems((prioritiesRes.data?.items ?? []) as PriorityItem[]);
+      } catch {
+        setPriorityItems([]);
+      }
+    })();
+  }, [headers, tenantId]);
+
+  useEffect(() => {
+    if (activeScreen !== 'dettaglio' || detail?.id) return;
+    void (async () => {
+      try {
+        const recent = await api.get('/v1/segnalazioni', { headers, params: { tenant_id: tenantId, page: 1, page_size: 1, sort: 'updated_at.desc' } });
+        const first = (recent.data?.items ?? [])[0] as Segnalazione | undefined;
+        if (!first?.id) return;
+        const data = await api.get(`/v1/segnalazioni/${first.id}`, { headers });
+        setDetail(data.data as Segnalazione);
+      } catch {
+        setDetail(null);
+      }
+    })();
+  }, [activeScreen, detail?.id, headers, tenantId]);
 
   const openWizard = () => {
     setWizardStep(1); setWizardError(''); setWizardTitle(''); setWizardDescription(''); setWizardAddress(''); setWizardTags(''); setWizardDuplicateOf(''); setDuplicateCandidates([]); setDuplicateMode(null); setActiveScreen('wizard');
@@ -160,6 +182,7 @@ export default function App() {
     setUserId(profile.userId);
     setTenantId(profile.tenantId);
     setAccess(null);
+    setDetail(null);
   };
 
   const checkDuplicates = async () => {
@@ -207,6 +230,18 @@ export default function App() {
     } finally { setWizardLoading(false); }
   };
 
+  const toggleSupport = async (id: string) => {
+    try {
+      const res = await api.post(`/v1/segnalazioni/${id}/vote-toggle`, { tenant_id: tenantId, user_id: userId }, { headers });
+      const nextCount = Number(res.data?.votes_count ?? 0);
+      setPriorityItems((curr) => curr.map((item) => (item.id === id ? { ...item, supporti: nextCount } : item)));
+    } catch {
+      // no-op: keep previous value
+    }
+  };
+
+  const priorityCategories = Array.from(new Set(priorityItems.map((p) => p.categoria))).slice(0, 6);
+
   return (
     <main className="mobile-shell">
       {devProfileSwitchEnabled && <section className="card dev-profile-switcher" data-testid="dev-profile-switcher"><div className="dev-profile-switcher__header"><p className="eyebrow">Dev profile switch</p><span className="test-mode-badge">MODALITÀ TEST</span></div><label>Profilo simulato<select aria-label="Profilo sviluppo" value={selectedDevProfile} onChange={(e) => onDevProfileChange(e.target.value as DevProfileKey)}>{devProfiles.map((profile) => <option key={profile.key} value={profile.key}>{profile.label}</option>)}</select></label><p className="muted">Header API effettivi: x-user-id {userId} • x-tenant-id {tenantId}</p></section>}
@@ -220,9 +255,9 @@ export default function App() {
         {wizardStep === 3 && <form className="screen" onSubmit={submitWizard}><p className="eyebrow">Nuova segnalazione • Step 3 di 3</p><h2>Conferma e invia</h2><label>Indirizzo / riferimento area<input aria-label="Indirizzo segnalazione" value={wizardAddress} onChange={(e) => setWizardAddress(e.target.value)} /></label><label>Tag (separati da virgola)<input aria-label="Tag segnalazione" value={wizardTags} onChange={(e) => setWizardTags(e.target.value)} /></label>{wizardError && <p className="error-text">{wizardError}</p>}<div className="row-actions"><button type="button" onClick={() => setWizardStep(2)}>Indietro</button><button type="submit" className="primary" disabled={wizardLoading}>{wizardLoading ? 'Invio...' : 'Invia segnalazione'}</button></div></form>}
       </section>}
 
-      {activeScreen === 'priorita' && <section className="screen card"><p className="eyebrow">Classifica segnalazioni</p><h2>Priorità del territorio</h2><div className="chips" aria-label="Categorie priorità"><span>Viabilità</span><span>Illuminazione</span><span>Decoro</span><span>Accessibilità</span></div><ul className="plain-list">{prioritiesMock.map((p) => <li key={p.titolo}><div><strong>{p.titolo}</strong><p>{p.categoria} • Trend {p.trend}</p></div><button type="button">Supporta ({p.supporti})</button></li>)}</ul></section>}
+      {activeScreen === 'priorita' && <section className="screen card"><p className="eyebrow">Classifica segnalazioni</p><h2>Priorità del territorio</h2><div className="chips" aria-label="Categorie priorità">{priorityCategories.map((cat) => <span key={cat}>{cat}</span>)}</div><ul className="plain-list">{priorityItems.map((p) => <li key={p.id}><div><strong>{p.titolo}</strong><p>{p.categoria} • Trend {p.trend}</p></div><button type="button" onClick={() => toggleSupport(p.id)}>Supporta ({p.supporti})</button></li>)}</ul>{priorityItems.length === 0 && <p className="muted">Nessuna priorità disponibile al momento.</p>}</section>}
 
-      {activeScreen === 'dettaglio' && <section className="screen detail-screen"><article className="card"><p className="eyebrow">Dettaglio segnalazione</p>{detail ? <><h2>{detail.codice ?? detail.id} • {detail.titolo ?? 'Segnalazione inviata'}</h2><p className="success-text">Segnalazione registrata con successo. Conserva il codice pubblico per il monitoraggio.</p>{detail.timeline && detail.timeline.length > 0 && <ol className="timeline" aria-label="Timeline stato">{detail.timeline.map((t, i) => <li key={t.id ?? i}><strong>{t.message ?? t.event_type ?? 'Aggiornamento'}</strong><span>{t.created_at ? new Date(t.created_at).toLocaleString('it-IT') : 'Ora non disponibile'}</span></li>)}</ol>}</> : <h2>Nessuna nuova segnalazione inviata in questa sessione</h2>}</article><article className="card"><h3>Descrizione</h3><p>{detail?.descrizione ?? 'Nessun contenuto disponibile.'}</p></article></section>}
+      {activeScreen === 'dettaglio' && <section className="screen detail-screen"><article className="card"><p className="eyebrow">Dettaglio segnalazione</p>{detail ? <><h2>{detail.codice ?? detail.id} • {detail.titolo ?? 'Segnalazione inviata'}</h2><p className="success-text">Segnalazione registrata con successo. Conserva il codice pubblico per il monitoraggio.</p>{detail.timeline && detail.timeline.length > 0 && <ol className="timeline" aria-label="Timeline stato">{detail.timeline.map((t, i) => <li key={t.id ?? i}><strong>{t.message ?? t.event_type ?? 'Aggiornamento'}</strong><span>{t.created_at ? new Date(t.created_at).toLocaleString('it-IT') : 'Ora non disponibile'}</span></li>)}</ol>}</> : <h2>Nessuna segnalazione disponibile per il dettaglio.</h2>}</article><article className="card"><h3>Descrizione</h3><p>{detail?.descrizione ?? 'Nessun contenuto disponibile.'}</p></article></section>}
 
       {activeScreen !== 'login' && <nav className="bottom-nav" aria-label="Navigazione mobile"><button type="button" onClick={() => setActiveScreen('home')} className={activeScreen === 'home' ? 'active' : ''}>Home</button><button type="button" onClick={openWizard} className={activeScreen === 'wizard' ? 'active' : ''}>Nuova</button><button type="button" onClick={() => setActiveScreen('priorita')} className={activeScreen === 'priorita' ? 'active' : ''}>Priorità</button><button type="button" onClick={() => setActiveScreen('dettaglio')} className={activeScreen === 'dettaglio' ? 'active' : ''}>Dettaglio</button></nav>}
     </main>

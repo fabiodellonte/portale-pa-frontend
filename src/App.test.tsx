@@ -34,7 +34,9 @@ function primeAccess() {
     if (url === '/v1/me/access') return Promise.resolve({ data: { user_id: userId, tenant_id: tenantId, ...(accessByUser[userId] ?? accessByUser['00000000-0000-0000-0000-000000000111']) } });
     if (url.includes('/branding')) return Promise.resolve({ data: { primary_color: '#0055A4', secondary_color: '#FFFFFF' } });
     if (url === '/v1/docs/public') return Promise.resolve({ data: { global: [], tenant: [] } });
-    if (url === '/v1/segnalazioni') return Promise.resolve({ data: { items: [] } });
+    if (url === '/v1/segnalazioni') return Promise.resolve({ data: { items: [{ id: 's1', titolo: 'Buca via Roma', stato: 'in_attesa', descrizione: 'Test', created_by: userId }] } });
+    if (url === '/v1/segnalazioni/priorities') return Promise.resolve({ data: { items: [{ id: 's1', titolo: 'Buca via Roma', categoria: 'Viabilità', trend: '+12%', supporti: 3 }] } });
+    if (url === '/v1/segnalazioni/s1') return Promise.resolve({ data: { id: 's1', codice: 'SGN-1', titolo: 'Buca via Roma', descrizione: 'Dettaglio reale da DB', timeline: [] } });
     return Promise.resolve({ data: {} });
   });
 }
@@ -95,6 +97,21 @@ describe('Portale PA mobile dettaglio', () => {
 
     await userEvent.selectOptions(screen.getByLabelText('Profilo sviluppo'), 'admin_demo');
     expect(await screen.findByRole('link', { name: 'Apri area amministrazione' })).toHaveAttribute('href', '/admin?tenant_id=00000000-0000-0000-0000-000000000001');
+  });
+
+  it('loads priorities and detail from API endpoints (no local mock cards)', async () => {
+    postMock.mockResolvedValue({ data: { votes_count: 4 } });
+    render(<App />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Priorità' }));
+
+    expect(await screen.findByText('Buca via Roma')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Supporta (3)' }));
+    expect(postMock).toHaveBeenCalledWith('/v1/segnalazioni/s1/vote-toggle', expect.anything(), expect.anything());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Dettaglio' }));
+    expect(await screen.findByText(/Dettaglio reale da DB/)).toBeInTheDocument();
   });
 
   it('keeps deterministic duplicate-search normalization contract', () => {
