@@ -1,5 +1,22 @@
-body { font-family: Inter, system-ui, Arial, sans-serif; margin: 0; background: #f6f7f9; color: #1f2937; }
-.container { max-width: 900px; margin: 0 auto; padding: 24px; }
-.card { background: #fff; border-radius: 12px; padding: 16px; margin-top: 16px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
-input { padding: 8px; width: 320px; max-width: 100%; margin-right: 8px; }
-button { padding: 8px 12px; }
+body { font-family: Inter, system-ui, Arial, sans-serif; margin: 0; background: #f4f6f9; color: #1f2937; }
+.shell { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.topbar { background: #fff; border: 1px solid #d6dde7; border-radius: 10px; padding: 12px; margin-bottom: 16px; }
+.topbar h1 { margin: 0 0 12px; font-size: 1.4rem; }
+.topbar nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.identity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
+.page { display: grid; gap: 12px; }
+.card { background: #fff; border: 1px solid #d6dde7; border-radius: 10px; padding: 16px; }
+.hero p { max-width: 70ch; }
+.metrics-grid .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.kpis div { background: #f8fafc; border: 1px solid #e1e7ef; border-radius: 8px; padding: 10px; display: grid; }
+.kpis strong { font-size: 1.25rem; }
+.filters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.list-item { border: 1px solid #e1e7ef; border-radius: 8px; padding: 12px; background: #fbfdff; }
+.actions, .pager, .wizard-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.wizard-grid { display: grid; gap: 8px; }
+input, select, textarea, button { padding: 8px; font: inherit; border-radius: 6px; border: 1px solid #c4ceda; }
+button { background: #fff; cursor: pointer; }
+button:hover { background: #f0f4f8; }
+.link { border: none; background: none; color: #0b4f9c; text-decoration: underline; padding: 0; cursor: pointer; }
+@media (max-width: 700px) { .shell { padding: 10px; } }
