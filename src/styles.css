@@ -219,8 +219,8 @@ textarea:focus-visible {
 .spid-card { border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-3); display: grid; gap: var(--space-2); background: var(--color-surface-soft); }
 .welcome { display: grid; gap: var(--space-2); }
 
-.horizontal-list { display: flex; gap: var(--space-2); overflow-x: auto; }
-.feature-card { min-width: 220px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-3); display: grid; gap: var(--space-2); background: var(--color-surface-soft); }
+.horizontal-list { display: grid; gap: var(--space-2); grid-template-columns: 1fr; }
+.feature-card { min-width: 0; width: 100%; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-3); display: grid; gap: var(--space-2); background: var(--color-surface-soft); }
 
 .plain-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
 .plain-list li { border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-3); display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); background: var(--color-surface-soft); }
