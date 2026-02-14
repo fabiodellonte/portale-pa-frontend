@@ -78,14 +78,16 @@ describe('Portale PA UX refinements', () => {
     primeAccess();
   });
 
-  it('shows tenant branding title and top-right public docs icon near profile with outlined info style', async () => {
+  it('shows tenant branding title and topbar dedicated about icon + build metadata', async () => {
     render(<App />);
     await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
 
     expect(await screen.findByRole('heading', { name: 'Città di Pesaro' })).toBeInTheDocument();
-    const docsButton = screen.getByLabelText('Documentazione pubblica');
-    expect(docsButton).toHaveClass('icon-btn');
-    expect(docsButton.querySelector('svg')).toHaveClass('topbar-icon--info');
+    const aboutButton = screen.getByLabelText('Informazioni app');
+    expect(aboutButton).toHaveClass('icon-btn');
+    expect(aboutButton.querySelector('svg')).toHaveClass('topbar-icon--info');
+    expect(screen.getByTestId('topbar-build-meta')).toBeInTheDocument();
+    expect(screen.getByLabelText('Documentazione pubblica')).toHaveClass('icon-btn');
     expect(screen.getByLabelText('Notifiche')).toHaveClass('icon-btn');
     expect(screen.getByLabelText('Profilo')).toHaveClass('icon-btn');
   });
@@ -211,12 +213,11 @@ describe('Portale PA UX refinements', () => {
     expect(screen.queryByRole('dialog', { name: 'Ricerca segnalazioni' })).not.toBeInTheDocument();
   });
 
-  it('navigates to About screen from profile and shows build version metadata', async () => {
+  it('navigates to About screen from topbar dedicated icon and shows build version metadata', async () => {
     render(<App />);
     await userEvent.click(screen.getByRole('button', { name: 'Entra con SPID' }));
-    await userEvent.click(screen.getByLabelText('Profilo'));
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Informazioni app' }));
+    await userEvent.click(screen.getByLabelText('Informazioni app'));
 
     expect(await screen.findByTestId('about-screen')).toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Dettagli versione applicazione' })).toBeInTheDocument();

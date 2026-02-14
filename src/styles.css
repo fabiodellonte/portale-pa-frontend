@@ -85,6 +85,11 @@ label { display: grid; gap: var(--space-2); font-size: var(--font-sm); }
 }
 .topbar-eyebrow { color: rgba(255, 255, 255, 0.78); }
 .topbar-brand { font-size: var(--font-lg); color: #ffffff; }
+.topbar-build-meta {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+}
 .app-topbar__actions { display: flex; align-items: center; gap: var(--space-2); }
 .icon-btn {
   position: relative;
