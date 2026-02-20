@@ -538,24 +538,42 @@ export default function App() {
   return (
     <main className="app-shell mobile-shell">
       {nonLoginScreen && (
-        <header className="app-topbar" aria-label="Barra superiore">
-          <div>
-            <p className="eyebrow topbar-eyebrow">{screenTitle[activeScreen as Exclude<Screen, 'login'>]}</p>
-            <h1 className="topbar-brand">Città di {tenantName}</h1>
-            <p className="topbar-build-meta" data-testid="topbar-build-meta">v{appVersion || 'n/d'} • {appBuildDate || 'n/d'}</p>
-          </div>
-          <div className="app-topbar__actions">
-            <button type="button" aria-label="Cerca" className="icon-btn" onClick={() => setIsSearchOpen(true)}><OutlineIcon paths="M11 4a7 7 0 1 0 4.95 11.95l4.05 4.05 1.4-1.4-4.05-4.05A7 7 0 0 0 11 4Z" /></button>
-            <button type="button" aria-label="Informazioni app" className="icon-btn" onClick={() => setActiveScreen('about')}><OutlineIcon className="topbar-icon topbar-icon--info" paths={["M12 10.2v6.2", "M12 7.2h.01", "M4.8 12a7.2 7.2 0 1 0 14.4 0 7.2 7.2 0 0 0-14.4 0Z"]} /></button>
-            <button type="button" aria-label="Documentazione pubblica" className="icon-btn" onClick={() => setActiveScreen('docs')}><OutlineIcon paths={["M6 5.5h9a1.5 1.5 0 0 1 1.5 1.5v10.5L12 15l-4.5 2.5V7A1.5 1.5 0 0 1 9 5.5", "M9 8.5h6", "M9 11h6"]} /></button>
-            <button type="button" aria-label="Notifiche" className="icon-btn" onClick={() => setActiveScreen('notifiche')}><OutlineIcon paths={["M12 4a4 4 0 0 0-4 4v2.5c0 .9-.3 1.8-.9 2.5L6 14.5h12L16.9 13c-.6-.7-.9-1.6-.9-2.5V8a4 4 0 0 0-4-4Z", "M10 18a2 2 0 0 0 4 0"]} />{unreadNotifications > 0 && <span className="icon-badge">{Math.min(unreadNotifications, 9)}</span>}</button>
+        <>
+          <header className="app-topbar" aria-label="Barra superiore">
+            <button type="button" aria-label="Menu rapido" className="icon-btn icon-btn--solid" onClick={() => setActiveScreen('home')}>
+              <OutlineIcon paths={["M4 7h16", "M4 12h16", "M4 17h16"]} />
+            </button>
+
+            <button type="button" className="topbar-search" aria-label="Apri ricerca" onClick={() => setIsSearchOpen(true)}>
+              <OutlineIcon paths="M11 4a7 7 0 1 0 4.95 11.95l4.05 4.05 1.4-1.4-4.05-4.05A7 7 0 0 0 11 4Z" />
+              <span>Cerca nel Portale PA</span>
+            </button>
+
+            <button type="button" aria-label="Notifiche" className="icon-btn" onClick={() => setActiveScreen('notifiche')}>
+              <OutlineIcon paths={["M12 4a4 4 0 0 0-4 4v2.5c0 .9-.3 1.8-.9 2.5L6 14.5h12L16.9 13c-.6-.7-.9-1.6-.9-2.5V8a4 4 0 0 0-4-4Z", "M10 18a2 2 0 0 0 4 0"]} />
+              {unreadNotifications > 0 && <span className="icon-badge">{Math.min(unreadNotifications, 9)}</span>}
+            </button>
+
             <button type="button" aria-label="Profilo" className="icon-btn" onClick={() => setActiveScreen('profilo')}>
               {avatarUrl
                 ? <img src={avatarUrl} alt="Avatar profilo" className="topbar-avatar" data-testid="topbar-avatar" />
                 : <OutlineIcon paths={["M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Z", "M12 14c-3.3 0-6 2.2-6 5h12c0-2.8-2.7-5-6-5Z"]} />}
             </button>
-          </div>
-        </header>
+          </header>
+
+          <section className="topbar-meta-card" aria-label="Contesto schermata">
+            <div>
+              <p className="eyebrow topbar-eyebrow">{screenTitle[activeScreen as Exclude<Screen, 'login'>]}</p>
+              <h1 className="topbar-brand">Città di {tenantName}</h1>
+            </div>
+            <p className="topbar-build-meta" data-testid="topbar-build-meta">v{appVersion || 'n/d'} • {appBuildDate || 'n/d'}</p>
+            <div className="quick-filters" aria-label="Filtri rapidi">
+              <button type="button" className="quick-filter is-active">Oggi</button>
+              <button type="button" className="quick-filter">Tutte le categorie</button>
+              <button type="button" className="quick-filter">Territorio</button>
+            </div>
+          </section>
+        </>
       )}
 
       {activeScreen === 'login' && <Card className="screen institutional-login"><p className="eyebrow">Portale Istituzionale Segnalazioni</p><h1>Accedi con identità digitale</h1><p className="muted">Servizio comunale per segnalazioni, priorità e aggiornamenti sul territorio.</p><div className="spid-card"><strong>SPID / CIE</strong><p>Autenticazione sicura per cittadini e operatori.</p><Button type="button" variant="primary" onClick={() => setActiveScreen('home')}>Entra con SPID</Button></div></Card>}
