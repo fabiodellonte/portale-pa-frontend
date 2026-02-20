@@ -226,7 +226,7 @@ export default function App() {
         const segnalazioniRes = await api.get('/v1/segnalazioni', { headers, params: { tenant_id: tenantId, page: 1, page_size: 50, sort: 'updated_at.desc' } });
         const all = (segnalazioniRes.data?.items ?? []) as Segnalazione[];
         setHomeSegnalazioni(all);
-        setFeaturedItems(all.slice(0, 3).map((i) => ({ id: i.id ?? i.codice ?? 'SGN', title: i.titolo ?? 'Segnalazione', text: `Stato: ${statoLabel(i.stato)} • Severità: ${i.severita ?? 'media'}`, badge: statoLabel(i.stato), priority: (i.priorita ?? 'media').toUpperCase(), area: i.address ?? 'Area non specificata' })));
+        setFeaturedItems(all.slice(0, 2).map((i) => ({ id: i.id ?? i.codice ?? 'SGN', title: i.titolo ?? 'Segnalazione', text: `Stato: ${statoLabel(i.stato)} • Severità: ${i.severita ?? 'media'}`, badge: statoLabel(i.stato), priority: (i.priorita ?? 'media').toUpperCase(), area: i.address ?? 'Area non specificata' })));
         setMyReports(all.filter((i) => i.created_by === userId || i.reported_by === userId || i.user_id === userId || i.author_id === userId).map((i) => ({ id: i.codice ?? i.id ?? 'SGN', titolo: i.titolo ?? 'Segnalazione', stato: statoLabel(i.stato), supporti: i.votes_count ?? i.supporti ?? 0, priorita: (i.priorita ?? 'media').toUpperCase(), area: i.address ?? 'Area non specificata' })));
         setHomeError('');
       } catch {
@@ -589,7 +589,7 @@ export default function App() {
             <div className="quick-filters" aria-label="Filtri rapidi">
               <button type="button" className="quick-filter is-active">Oggi</button>
               <button type="button" className="quick-filter">Tutte le categorie</button>
-              <button type="button" className="quick-filter">Territorio</button>
+              <button type="button" className="quick-filter">Area</button>
             </div>
           </section>
         </>
@@ -651,7 +651,7 @@ export default function App() {
           <Card as="article">
             <h3>Le mie segnalazioni</h3>
             <ul className="plain-list">
-              {myReports.map((r) => (
+              {myReports.slice(0, 3).map((r) => (
                 <li key={r.id}>
                   <div>
                     <strong>{r.titolo}</strong>
