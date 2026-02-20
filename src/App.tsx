@@ -165,6 +165,25 @@ export default function App() {
     ].filter(Boolean);
   }, [homeSegnalazioni, priorityItems]);
 
+  const homeStats = useMemo(() => {
+    const total = homeSegnalazioni.length;
+    const inAttesa = homeSegnalazioni.filter((item) => (item.stato ?? '').toLowerCase() === 'in_attesa').length;
+    const alta = homeSegnalazioni.filter((item) => (item.priorita ?? '').toLowerCase() === 'alta' || (item.severita ?? '').toLowerCase() === 'alta').length;
+    return { total, inAttesa, alta };
+  }, [homeSegnalazioni]);
+
+  const hourlyLoad = useMemo(() => {
+    const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 }));
+    homeSegnalazioni.forEach((item) => {
+      if (!item.updated_at) return;
+      const date = new Date(item.updated_at);
+      if (Number.isNaN(date.getTime())) return;
+      buckets[date.getHours()].count += 1;
+    });
+    const max = Math.max(1, ...buckets.map((bucket) => bucket.count));
+    return { buckets, max };
+  }, [homeSegnalazioni]);
+
   const aiAssistantMessages = useMemo(() => {
     const base = ['Buongiorno, sono l’assistente operativo del Portale PA.'];
     if (aiAssistantInput.trim().length >= 3) {
@@ -578,7 +597,74 @@ export default function App() {
 
       {activeScreen === 'login' && <Card className="screen institutional-login"><p className="eyebrow">Portale Istituzionale Segnalazioni</p><h1>Accedi con identità digitale</h1><p className="muted">Servizio comunale per segnalazioni, priorità e aggiornamenti sul territorio.</p><div className="spid-card"><strong>SPID / CIE</strong><p>Autenticazione sicura per cittadini e operatori.</p><Button type="button" variant="primary" onClick={() => setActiveScreen('home')}>Entra con SPID</Button></div></Card>}
 
-      {activeScreen === 'home' && <section className="screen home-screen"><Card as="article"><h3>In evidenza</h3>{homeError && <p className="muted">{homeError}</p>}<div className="horizontal-list">{featuredItems.map((i) => <div key={i.id} className="feature-card"><Badge>{i.badge}</Badge><strong>{i.title}</strong><p>{i.text}</p><p className="muted">Priorità {i.priority} • {i.area}</p></div>)}</div><div className="inline-actions"><Button type="button" variant="primary" onClick={openWizard}>Crea segnalazione</Button><Button type="button" onClick={() => setIsAiAssistantOpen(true)}>Apri Assistente AI</Button></div></Card><Card as="article" className="ai-insight-card" testId="ai-insight-card"><div className="dev-profile-switcher__header"><h3>AI Insight</h3><Badge tone="warning">AUTO</Badge></div><p className="muted">Suggerimenti automatici basati su priorità e segnalazioni correnti.</p><ul className="plain-list docs-list">{aiInsights.map((item) => <li key={item}>{item}</li>)}</ul>{aiInsights.length === 0 && <p className="muted">Nessun insight disponibile al momento.</p>}</Card><Card as="article"><h3>Le mie segnalazioni</h3><ul className="plain-list">{myReports.map((r) => <li key={r.id}><div><strong>{r.titolo}</strong><p>{r.id} • {r.stato}</p><p>Priorità {r.priorita} • {r.area}</p></div><small>{r.supporti} supporti</small></li>)}</ul></Card></section>}
+      {activeScreen === 'home' && (
+        <section className="screen home-screen">
+          <Card as="article" className="kpi-card">
+            <div className="dev-profile-switcher__header">
+              <h3>Quadro rapido</h3>
+              <Badge>Live</Badge>
+            </div>
+            <div className="kpi-grid">
+              <div className="kpi-item"><span>Totali</span><strong>{homeStats.total}</strong></div>
+              <div className="kpi-item"><span>In attesa</span><strong>{homeStats.inAttesa}</strong></div>
+              <div className="kpi-item"><span>Alta priorità</span><strong>{homeStats.alta}</strong></div>
+            </div>
+            <div className="mini-bars" aria-label="Distribuzione aggiornamenti per ora">
+              {hourlyLoad.buckets.map((bucket) => (
+                <div key={bucket.hour} className="mini-bar-col" title={`${bucket.hour}:00 • ${bucket.count}`}>
+                  <span style={{ height: `${Math.max(6, (bucket.count / hourlyLoad.max) * 54)}px` }} />
+                  <small>{bucket.hour}</small>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card as="article">
+            <h3>In evidenza</h3>
+            {homeError && <p className="muted">{homeError}</p>}
+            <div className="horizontal-list">
+              {featuredItems.map((i) => (
+                <div key={i.id} className="feature-card">
+                  <Badge>{i.badge}</Badge>
+                  <strong>{i.title}</strong>
+                  <p>{i.text}</p>
+                  <p className="muted">Priorità {i.priority} • {i.area}</p>
+                </div>
+              ))}
+            </div>
+            <div className="inline-actions">
+              <Button type="button" variant="primary" onClick={openWizard}>Crea segnalazione</Button>
+              <Button type="button" onClick={() => setIsAiAssistantOpen(true)}>Apri Assistente AI</Button>
+            </div>
+          </Card>
+
+          <Card as="article" className="ai-insight-card" testId="ai-insight-card">
+            <div className="dev-profile-switcher__header">
+              <h3>AI Insight</h3>
+              <Badge tone="warning">AUTO</Badge>
+            </div>
+            <p className="muted">Suggerimenti automatici basati su priorità e segnalazioni correnti.</p>
+            <ul className="plain-list docs-list">{aiInsights.map((item) => <li key={item}>{item}</li>)}</ul>
+            {aiInsights.length === 0 && <p className="muted">Nessun insight disponibile al momento.</p>}
+          </Card>
+
+          <Card as="article">
+            <h3>Le mie segnalazioni</h3>
+            <ul className="plain-list">
+              {myReports.map((r) => (
+                <li key={r.id}>
+                  <div>
+                    <strong>{r.titolo}</strong>
+                    <p>{r.id} • {r.stato}</p>
+                    <p>Priorità {r.priorita} • {r.area}</p>
+                  </div>
+                  <small>{r.supporti} supporti</small>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </section>
+      )}
 
       {activeScreen === 'notifiche' && (
         <section className="screen" data-testid="notifications-screen">
